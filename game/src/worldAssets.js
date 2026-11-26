@@ -142,14 +142,14 @@ function mergeParts(parts) {
   const uvs = [];
   const indices = [];
   for (const part of parts) {
-    const { geometry, y = 0, scale = [1, 1, 1], tint = [1, 1, 1], shadeTop = 1, shadeBottom = 0.7 } = part;
+    const { geometry, x = 0, y = 0, z = 0, scale = [1, 1, 1], tint = [1, 1, 1], shadeTop = 1, shadeBottom = 0.7 } = part;
     const sourcePosition = geometry.attributes.position.array;
     const sourceNormal = geometry.attributes.normal?.array;
     const sourceUv = geometry.attributes.uv?.array;
     const base = positions.length / 3;
     for (let i = 0; i < sourcePosition.length; i += 3) {
       const py = sourcePosition[i + 1] * scale[1] + y;
-      positions.push(sourcePosition[i] * scale[0], py, sourcePosition[i + 2] * scale[2]);
+      positions.push(sourcePosition[i] * scale[0] + x, py, sourcePosition[i + 2] * scale[2] + z);
       normals.push(sourceNormal ? sourceNormal[i] : 0, sourceNormal ? sourceNormal[i + 1] : 1, sourceNormal ? sourceNormal[i + 2] : 0);
       const shade = shadeBottom + (shadeTop - shadeBottom) * smoothstep(-1.2, 4.5, py);
       colors.push(tint[0] * shade, tint[1] * shade, tint[2] * shade);
@@ -226,16 +226,27 @@ export function makeMountainGeometry() {
 
 export function makeCloudGeometry() {
   const random = createRandom(8831);
+  const offsets = [
+    [-1.65, -0.08, 0.05],
+    [-0.82, 0.22, -0.16],
+    [0, 0.02, 0],
+    [0.86, 0.28, 0.15],
+    [1.65, -0.02, -0.05],
+    [0.38, 0.55, -0.08],
+  ];
   const parts = [];
-  for (let i = 0; i < 5; i += 1) {
-    const puff = new THREE.IcosahedronGeometry(1, 0);
+  for (let i = 0; i < offsets.length; i += 1) {
+    const puff = new THREE.IcosahedronGeometry(1, 1);
+    const [x, y, z] = offsets[i];
     parts.push({
       geometry: puff,
-      y: i === 0 ? 0 : random.range(-0.2, 0.55),
-      scale: [random.range(1.1, 1.9), random.range(0.42, 0.72), random.range(0.8, 1.35)],
-      tint: [random.range(0.87, 1), random.range(0.92, 1), random.range(0.95, 1)],
-      shadeTop: 1.12,
-      shadeBottom: 0.42,
+      x: x + random.range(-0.08, 0.08),
+      y: y + random.range(-0.04, 0.08),
+      z: z + random.range(-0.06, 0.06),
+      scale: [random.range(0.72, 1.08), random.range(0.34, 0.55), random.range(0.55, 0.9)],
+      tint: [random.range(0.9, 1), random.range(0.94, 1), random.range(0.96, 1)],
+      shadeTop: 1.16,
+      shadeBottom: 0.5,
     });
   }
   return mergeParts(parts);
