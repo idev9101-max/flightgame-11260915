@@ -5,44 +5,78 @@ import { clamp, damp, smoothstep } from './random.js';
 const DEG = 180 / Math.PI;
 const TRAIL_POINTS = 70;
 
-function cockpitTexture(title, value, ticks) {
+function createDial(title, ticks) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#08141c';
-  ctx.beginPath();
-  ctx.arc(128, 128, 120, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#6de3ff';
-  ctx.lineWidth = 7;
-  ctx.stroke();
-  ctx.strokeStyle = '#b8d8e6';
-  ctx.lineWidth = 4;
-  for (let i = 0; i < ticks; i += 1) {
-    const a = (i / ticks) * Math.PI * 1.5 + Math.PI * 0.75;
-    ctx.beginPath();
-    ctx.moveTo(128 + Math.cos(a) * 92, 128 + Math.sin(a) * 92);
-    ctx.lineTo(128 + Math.cos(a) * 108, 128 + Math.sin(a) * 108);
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#8fdcf2';
-  ctx.font = 'bold 30px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(title, 128, 82);
-  ctx.font = 'bold 24px system-ui, sans-serif';
-  ctx.fillStyle = '#eaf8ff';
-  ctx.fillText(value, 128, 182);
   const texture = new THREE.CanvasTexture(canvas);
   if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  let last = null;
+  function draw(value) {
+    if (value === last) return;
+    last = value;
+    ctx.clearRect(0, 0, 256, 256);
+    ctx.fillStyle = '#06131b';
+    ctx.beginPath();
+    ctx.arc(128, 128, 120, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#7ceaff';
+    ctx.lineWidth = 9;
+    ctx.stroke();
+    ctx.strokeStyle = '#b8d8e6';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < ticks; i += 1) {
+      const a = (i / ticks) * Math.PI * 1.5 + Math.PI * 0.75;
+      ctx.beginPath();
+      ctx.moveTo(128 + Math.cos(a) * 88, 128 + Math.sin(a) * 88);
+      ctx.lineTo(128 + Math.cos(a) * 106, 128 + Math.sin(a) * 106);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#8fdcf2';
+    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, 128, 72);
+    ctx.font = 'bold 38px ui-monospace, monospace';
+    ctx.fillStyle = '#fff6da';
+    ctx.fillText(value, 128, 190);
+    texture.version += 1;
+  }
+  return { texture, draw };
+}
+
+function createStrip() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+  let last = null;
+  function draw(value) {
+    if (value === last) return;
+    last = value;
+    ctx.clearRect(0, 0, 512, 64);
+    ctx.fillStyle = '#061820';
+    ctx.fillRect(0, 0, 512, 64);
+    ctx.strokeStyle = '#4bd0ee';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(3, 3, 506, 58);
+    ctx.fillStyle = '#bdf4ff';
+    ctx.font = 'bold 30px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(value, 256, 34);
+    texture.version += 1;
+  }
+  return { texture, draw };
 }
 
 function buildBody() {
   const group = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color: 0xf2f5f1, roughness: 0.55, metalness: 0.18, flatShading: true });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x2b8fa8, roughness: 0.5, metalness: 0.2, flatShading: true });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x24313b, roughness: 0.7, metalness: 0.3, flatShading: true });
+  const paint = new THREE.MeshStandardMaterial({ color: 0xfff8e8, roughness: 0.44, metalness: 0.16, flatShading: true, emissive: 0x3c2b1c, emissiveIntensity: 0.3 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xf06a45, roughness: 0.46, metalness: 0.24, flatShading: true, emissive: 0x5b1d10, emissiveIntensity: 0.42 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1c2a34, roughness: 0.68, metalness: 0.34, flatShading: true });
 
   const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.62, 10.5, 8), paint);
   fuselage.rotation.x = Math.PI / 2;
@@ -81,9 +115,15 @@ function buildBody() {
   wing.position.set(0, -0.35, -0.9);
   group.add(wing);
 
-  const wingStripe = new THREE.Mesh(new THREE.BoxGeometry(13.8, 0.05, 0.45), accent);
-  wingStripe.position.set(0, -0.18, -0.2);
+  const wingStripe = new THREE.Mesh(new THREE.BoxGeometry(13.8, 0.08, 0.5), accent);
+  wingStripe.position.set(0, -0.17, -0.3);
   group.add(wingStripe);
+  const leadingEdge = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.12, 0.24), paint);
+  leadingEdge.position.set(0, -0.24, -1.15);
+  group.add(leadingEdge);
+  const bellyStripe = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 8.8), accent);
+  bellyStripe.position.set(0, -0.72, 0.1);
+  group.add(bellyStripe);
 
   const tailPlane = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.24, 2.0), paint);
   tailPlane.position.set(0, 0.35, 5.2);
@@ -101,24 +141,37 @@ function buildBody() {
   group.add(canopy);
 
   const propeller = new THREE.Group();
+  const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0x29343a, roughness: 0.5, metalness: 0.4, flatShading: true, emissive: 0x122c36, emissiveIntensity: 0.5 });
   for (let i = 0; i < 3; i += 1) {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.9, 0.08), dark);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.36, 4.1, 0.1), bladeMaterial);
     blade.rotation.z = (i / 3) * Math.PI;
     propeller.add(blade);
   }
-  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 8), dark);
+  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1, 8), accent);
   hub.rotation.x = -Math.PI / 2;
   propeller.add(hub);
   propeller.position.z = -8.5;
   group.add(propeller);
+  const propDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(2.05, 20),
+    new THREE.MeshBasicMaterial({ color: 0xd6f4ff, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  propDisc.position.z = -8.58;
+  group.add(propDisc);
 
-  const leftLight = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), new THREE.MeshBasicMaterial({ color: 0xff4d5e }));
+  const haloMaterialA = new THREE.MeshBasicMaterial({ color: 0xff5c68, transparent: true, opacity: 0.24, depthWrite: false, fog: false });
+  const haloMaterialB = new THREE.MeshBasicMaterial({ color: 0x6dffb0, transparent: true, opacity: 0.24, depthWrite: false, fog: false });
+  const leftLight = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff4d5e, fog: false }));
   leftLight.position.set(-7.55, -0.28, 0);
-  const rightLight = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), new THREE.MeshBasicMaterial({ color: 0x65ffa8 }));
+  const rightLight = new THREE.Mesh(new THREE.SphereGeometry(0.36, 8, 6), new THREE.MeshBasicMaterial({ color: 0x65ffa8, fog: false }));
   rightLight.position.set(7.55, -0.28, 0);
-  const tailLight = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  const leftHalo = new THREE.Mesh(new THREE.SphereGeometry(0.92, 8, 6), haloMaterialA);
+  leftHalo.position.copy(leftLight.position);
+  const rightHalo = new THREE.Mesh(new THREE.SphereGeometry(0.92, 8, 6), haloMaterialB);
+  rightHalo.position.copy(rightLight.position);
+  const tailLight = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false }));
   tailLight.position.set(0, 0.9, 7.5);
-  group.add(leftLight, rightLight, tailLight);
+  group.add(leftLight, rightLight, leftHalo, rightHalo, tailLight);
 
   const gearGroup = new THREE.Group();
   const wheelGeometry = new THREE.CylinderGeometry(0.62, 0.62, 0.26, 10);
@@ -154,9 +207,9 @@ function buildBody() {
 
 function buildCockpit() {
   const group = new THREE.Group();
-  const frame = new THREE.MeshStandardMaterial({ color: 0x1b2a33, roughness: 0.6, metalness: 0.45, flatShading: true, fog: false });
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x12242f, emissive: 0x0b3444, emissiveIntensity: 0.9, roughness: 0.7, fog: false });
-  const glow = new THREE.MeshBasicMaterial({ color: 0x7ce9ff, fog: false });
+  const frame = new THREE.MeshStandardMaterial({ color: 0x30454f, roughness: 0.55, metalness: 0.4, flatShading: true, emissive: 0x0b1c24, emissiveIntensity: 0.6, fog: false });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x102b38, emissive: 0x12607a, emissiveIntensity: 1.25, roughness: 0.7, fog: false });
+  const glow = new THREE.MeshBasicMaterial({ color: 0x9af2ff, fog: false });
 
   const panel = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.52, 0.34), panelMat);
   panel.position.set(0, -0.48, -0.92);
@@ -165,33 +218,45 @@ function buildCockpit() {
 
   const dials = [];
   const dialInfo = [
-    { title: 'AIRSPEED', value: 'KT', x: -0.62 },
-    { title: 'ALTITUDE', value: 'FT', x: 0 },
-    { title: 'HEADING', value: 'HDG', x: 0.62 },
+    { title: 'AIRSPEED', value: '000 KT', x: -0.62 },
+    { title: 'ALTITUDE', value: '0000 FT', x: 0 },
+    { title: 'HEADING', value: '000°', x: 0.62 },
   ];
   for (const info of dialInfo) {
+    const dial = createDial(info.title, 10);
+    dial.draw(info.value);
     const face = new THREE.Mesh(
-      new THREE.CircleGeometry(0.19, 24),
-      new THREE.MeshBasicMaterial({ map: cockpitTexture(info.title, info.value, 10), fog: false }),
+      new THREE.CircleGeometry(0.205, 24),
+      new THREE.MeshBasicMaterial({ map: dial.texture, fog: false }),
     );
-    face.position.set(info.x, -0.39, -0.775);
+    face.position.set(info.x, -0.38, -0.755);
     face.rotation.x = -0.28;
     group.add(face);
-    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.016, 6, 24), glow);
+    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.215, 0.02, 6, 24), glow);
     bezel.position.copy(face.position);
     bezel.position.z += 0.012;
     bezel.rotation.x = -0.28;
     group.add(bezel);
     const needlePivot = new THREE.Group();
     needlePivot.position.copy(face.position);
-    needlePivot.position.z += 0.022;
+    needlePivot.position.z += 0.024;
     needlePivot.rotation.x = -0.28;
-    const needle = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.17, 0.012), new THREE.MeshBasicMaterial({ color: 0xff9d72, fog: false }));
+    const needle = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.17, 0.012), new THREE.MeshBasicMaterial({ color: 0xffb37d, fog: false }));
     needle.position.y = 0.07;
     needlePivot.add(needle);
     group.add(needlePivot);
-    dials.push(needlePivot);
+    dials.push({ pivot: needlePivot, dial });
   }
+
+  const strip = createStrip();
+  strip.draw('GEAR DN  FLAPS UP  THR 74%');
+  const readout = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.86, 0.23),
+    new THREE.MeshBasicMaterial({ map: strip.texture, fog: false, transparent: true, depthWrite: false }),
+  );
+  readout.position.set(0, -0.66, -0.735);
+  readout.rotation.x = -0.28;
+  group.add(readout);
 
   for (const side of [-1, 1]) {
     const strut = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.25, 0.07), frame);
@@ -222,8 +287,8 @@ function buildCockpit() {
   glare.position.set(0, -0.21, -0.93);
   group.add(glare);
 
-  const lamp = new THREE.PointLight(0x8ce8ff, 1.4, 2.4);
-  lamp.position.set(0, -0.1, -0.3);
+  const lamp = new THREE.PointLight(0x9ceeff, 2.1, 3);
+  lamp.position.set(0, -0.15, -0.35);
   group.add(lamp);
 
   const hudGlass = new THREE.Mesh(
@@ -233,7 +298,7 @@ function buildCockpit() {
   hudGlass.position.set(0, 0.05, -0.94);
   group.add(hudGlass);
 
-  return { group, dials, yoke, lamp };
+  return { group, dials, yoke, lamp, strip };
 }
 
 export function createAircraft(scene, camera, mission) {
@@ -243,7 +308,15 @@ export function createAircraft(scene, camera, mission) {
   cockpit.group.visible = false;
   camera.add(cockpit.group);
 
-  const trailMaterial = new THREE.LineBasicMaterial({ color: 0xc3f5ff, transparent: true, opacity: 0.55, depthWrite: false });
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(5, 18),
+    new THREE.MeshBasicMaterial({ color: 0x071218, transparent: true, opacity: 0.24, depthWrite: false, fog: false }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.frustumCulled = false;
+  scene.add(shadow);
+
+  const trailMaterial = new THREE.LineBasicMaterial({ color: 0xa7f4ff, transparent: true, opacity: 0.7, depthWrite: false, fog: false });
   const trails = [];
   for (let i = 0; i < 2; i += 1) {
     const geometry = new THREE.BufferGeometry();
@@ -301,11 +374,10 @@ export function createAircraft(scene, camera, mission) {
   const tmpB = new THREE.Vector3();
   const tmpC = new THREE.Vector3();
   const prevPos = new THREE.Vector3();
-  const chaseOffset = new THREE.Vector3(0, 4.4, 21);
+  const chaseOffset = new THREE.Vector3(0, 3.2, 16.5);
   const cockpitOffset = new THREE.Vector3(0, 1.15, -2.4);
   const desiredCamera = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
-  let cameraMode = 'chase';
   let propAngle = 0;
   let shake = 0;
 
@@ -324,14 +396,14 @@ export function createAircraft(scene, camera, mission) {
       if (!visible) continue;
       trail.array.copyWithin(3, 0, (TRAIL_POINTS - 1) * 3);
       const side = trails.indexOf(trail) === 0 ? -1 : 1;
-      tmpA.copy(state.pos).addScaledVector(right, side * 7.2).addScaledVector(forward, 0.6);
+      tmpA.copy(state.pos).addScaledVector(right, side * 7.55).addScaledVector(forward, 0.5).addScaledVector(up, -0.2);
       trail.array[0] = tmpA.x;
       trail.array[1] = tmpA.y;
       trail.array[2] = tmpA.z;
       trail.count = Math.min(TRAIL_POINTS, trail.count + 1);
       trail.line.geometry.setDrawRange(0, trail.count);
       trail.line.geometry.attributes.position.needsUpdate = true;
-      trail.line.material.opacity = clamp(0.15 + state.vel.length() * 0.004, 0.15, 0.55);
+      trail.line.material.opacity = clamp(0.32 + state.vel.length() * 0.005, 0.32, 0.82);
     }
   }
 
@@ -341,6 +413,38 @@ export function createAircraft(scene, camera, mission) {
       trail.array.fill(0);
       trail.line.geometry.setDrawRange(0, 0);
       trail.line.visible = false;
+    }
+  }
+
+  function updateShadow(world) {
+    const ground = world.heightAt(state.pos.x, state.pos.z);
+    const altitude = Math.max(0, state.pos.y - ground);
+    shadow.position.set(state.pos.x, ground + 0.12, state.pos.z);
+    const scale = 1 + clamp(altitude * 0.035, 0, 1.6);
+    shadow.scale.set(scale, scale, scale);
+    shadow.material.opacity = clamp(0.3 - altitude * 0.004, 0.04, 0.3);
+    shadow.visible = altitude < 90 && !state.crashed;
+  }
+
+  function seedMotion() {
+    propAngle = 0.72;
+    body.propeller.rotation.z = propAngle;
+    const speed = state.vel.length();
+    for (let i = 0; i < trails.length; i += 1) {
+      const trail = trails[i];
+      const side = i === 0 ? -1 : 1;
+      for (let point = 0; point < TRAIL_POINTS; point += 1) {
+        tmpA.copy(state.pos).addScaledVector(right, side * 7.55).addScaledVector(forward, 0.5 - point * 0.6);
+        tmpA.addScaledVector(up, -0.2 + Math.sin(point * 0.42 + side) * 0.28);
+        trail.array[point * 3] = tmpA.x;
+        trail.array[point * 3 + 1] = tmpA.y;
+        trail.array[point * 3 + 2] = tmpA.z;
+      }
+      trail.count = TRAIL_POINTS;
+      trail.line.geometry.setDrawRange(0, TRAIL_POINTS);
+      trail.line.geometry.attributes.position.needsUpdate = true;
+      trail.line.visible = state.flying && speed > 28 && !state.crashed;
+      trail.line.material.opacity = clamp(0.32 + speed * 0.005, 0.32, 0.82);
     }
   }
 
@@ -510,12 +614,12 @@ export function createAircraft(scene, camera, mission) {
     body.exhaust.material.opacity = 0.2 + state.throttle * 0.45;
     body.group.position.copy(state.pos);
     body.group.quaternion.copy(quaternion);
+    updateShadow(world);
     updateTrails(dt);
     updateSparks(dt);
   }
 
   function updateCamera(dt, mode, force = false) {
-    cameraMode = mode;
     const cockpitMode = mode === 'cockpit';
     cockpit.group.visible = cockpitMode;
     body.group.visible = !cockpitMode;
@@ -535,14 +639,26 @@ export function createAircraft(scene, camera, mission) {
       else camera.position.lerp(desiredCamera, 1 - Math.exp(-5.5 * dt));
       if (shakeAmount > 0) camera.position.x += Math.sin(state.elapsed * 41) * shakeAmount;
       camera.up.set(0, 1, 0).lerp(up, 0.32).normalize();
-      lookTarget.copy(state.pos).addScaledVector(forward, 11).addScaledVector(up, 1.6);
+      lookTarget.copy(state.pos).addScaledVector(forward, 8.5).addScaledVector(up, 1.1);
       camera.lookAt(lookTarget);
-      camera.fov = 68 + clamp(state.vel.length() * 0.07, 0, 8);
+      camera.fov = 62 + clamp(state.vel.length() * 0.045, 0, 5);
     }
     camera.updateProjectionMatrix();
-    cockpit.dials[0].rotation.z = -clamp(state.vel.length() * 1.94 / 180, 0, 1) * 4.5 + 2.25;
-    cockpit.dials[1].rotation.z = -clamp((state.pos.y - RUNWAY_Y) * 3.28084 / 2200, 0, 1) * 4.5 + 2.25;
-    cockpit.dials[2].rotation.z = -(state.heading / 360) * Math.PI * 2;
+    const speedKts = state.vel.length() * 1.94384;
+    const altFt = Math.max(-20, (state.pos.y - RUNWAY_Y) * 3.28084);
+    const headingDeg = ((state.heading * DEG) % 360 + 360) % 360;
+    const readings = [
+      `${String(Math.round(speedKts)).padStart(3, '0')} KT`,
+      `${String(Math.round(altFt)).padStart(4, '0')} FT`,
+      `${String(Math.round(headingDeg)).padStart(3, '0')}°`,
+    ];
+    for (let i = 0; i < cockpit.dials.length; i += 1) {
+      cockpit.dials[i].dial.draw(readings[i]);
+    }
+    cockpit.dials[0].pivot.rotation.z = -clamp(speedKts / 180, 0, 1) * 4.5 + 2.25;
+    cockpit.dials[1].pivot.rotation.z = -clamp(altFt / 2200, 0, 1) * 4.5 + 2.25;
+    cockpit.dials[2].pivot.rotation.z = -(headingDeg / 360) * Math.PI * 2;
+    cockpit.strip.draw(`GEAR ${state.gear ? 'DN ' : 'UP '}  FLAPS ${state.flaps ? 'DN ' : 'UP '}  THR ${String(Math.round(state.throttle * 100)).padStart(2, '0')}%`);
     cockpit.yoke.rotation.z = -state.roll * 0.5;
   }
 
@@ -551,6 +667,14 @@ export function createAircraft(scene, camera, mission) {
     update,
     updateCamera,
     updateAxes,
+    syncShot(world, mode) {
+      body.group.position.copy(state.pos);
+      body.group.quaternion.copy(quaternion);
+      body.gearGroup.visible = state.gear;
+      updateShadow(world);
+      seedMotion();
+      updateCamera(0, mode, true);
+    },
     reset() {
       state.pos.set(0, RUNWAY_Y + 1.45, RUNWAY_NEAR - 28);
       state.vel.set(0, 0, 0);
@@ -574,13 +698,14 @@ export function createAircraft(scene, camera, mission) {
       state.landed = false;
       shake = 0;
       sparks.visible = false;
+      shadow.visible = false;
       resetTrails();
       updateAxes();
       body.group.position.copy(state.pos);
       body.group.quaternion.copy(quaternion);
     },
     setCameraMode(mode, dt = 0) {
-      updateCamera(dt || STEP_PLACEHOLDER, mode, true);
+      updateCamera(dt, mode, true);
     },
     adjustThrottle(delta) {
       state.throttleTarget = clamp(state.throttleTarget + delta, 0, 1);
@@ -602,9 +727,10 @@ export function createAircraft(scene, camera, mission) {
         trail.line.material.dispose();
       }
       scene.remove(sparks);
+      scene.remove(shadow);
+      shadow.geometry.dispose();
+      shadow.material.dispose();
       camera.remove(cockpit.group);
     },
   };
 }
-
-const STEP_PLACEHOLDER = 1 / 60;

@@ -1125,6 +1125,12 @@ function uniformLocations(gl, shaderProgram, names) {
 
 const sceneState = { fog: { color: new Color(0x7f919e), density: 0.0005 }, enabled: true };
 
+function traverseVisible(root, visit) {
+  if (!root.visible) return;
+  visit(root);
+  for (const child of root.children) traverseVisible(child, visit);
+}
+
 export class WebGLRenderer {
   constructor(options = {}) {
     this.canvas = options.canvas ?? document.createElement('canvas');
@@ -1270,7 +1276,7 @@ export class WebGLRenderer {
       sunIntensity: 1,
       sunDir: new Vector3(-0.4, 0.8, -0.4).normalize(),
     };
-    scene.traverse((object) => {
+    traverseVisible(scene, (object) => {
       if (object instanceof AmbientLight) lights.ambient.copy(object.color).multiplyScalar(object.intensity);
       if (object instanceof HemisphereLight) {
         lights.hemiSky.copy(object.color).multiplyScalar(object.intensity);
@@ -1285,8 +1291,8 @@ export class WebGLRenderer {
     const sky = [];
     const opaque = [];
     const transparent = [];
-    scene.traverse((object) => {
-      if (!object.visible || !(object.isMesh || object.isLine || object.isPoints || object.isSprite)) return;
+    traverseVisible(scene, (object) => {
+      if (!(object.isMesh || object.isLine || object.isPoints || object.isSprite)) return;
       const material = object.material;
       if (!material) return;
       const entry = { object, material, distance: cameraPosition.distanceTo(new Vector3(object.matrixWorld[12], object.matrixWorld[13], object.matrixWorld[14])) };

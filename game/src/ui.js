@@ -122,7 +122,7 @@ export function createUI(onAction) {
         <div class="label">SIMULATION HOLD</div>
         <h1>Paused</h1>
         <div class="stats">
-          <div class="stat"><span class="label">GATES</span><span class="num">${data.ringIndex} / ${data.rings}</span></div>
+          <div class="stat"><span class="label">GATES</span><span class="num">${data.ringIndex} / ${data.rings.length}</span></div>
           <div class="stat"><span class="label">SCORE</span><span class="num">${padScore(data.score)}</span></div>
           <div class="stat"><span class="label">TIME</span><span class="num">${fmtTime(data.timeLeft)}</span></div>
         </div>
@@ -168,7 +168,7 @@ export function createUI(onAction) {
         <div class="stats">
           <div class="stat"><span class="label">SCORE</span><span class="num good">${padScore(data.score)}</span></div>
           <div class="stat"><span class="label">RANK</span><span class="num">${data.success ? rank : '—'}</span></div>
-          <div class="stat"><span class="label">GATES</span><span class="num">${data.ringIndex} / ${data.rings}</span></div>
+          <div class="stat"><span class="label">GATES</span><span class="num">${data.ringIndex} / ${data.rings.length}</span></div>
           <div class="stat"><span class="label">TIME USED</span><span class="num">${fmtTime(data.elapsed)}</span></div>
           <div class="stat"><span class="label">AIRFRAME</span><span class="num ${data.integrity < 40 ? 'bad' : ''}">${Math.round(data.integrity)}%</span></div>
           <div class="stat"><span class="label">BEST</span><span class="num warn">${padScore(data.best)}</span></div>
@@ -214,7 +214,7 @@ export function createUI(onAction) {
     mapCtx.lineTo(rx2, ry2);
     mapCtx.stroke();
     for (let i = 0; i < data.rings.length; i += 1) {
-      const c = data.rings[i];
+      const c = data.rings[i].center;
       const [px, py] = project(c.x, c.z);
       const passed = i < data.ringIndex;
       const next = i === data.ringIndex;

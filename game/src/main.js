@@ -97,7 +97,8 @@ function missionData() {
     score: state.score,
     integrity: state.integrity,
     ringIndex: state.ringIndex,
-    rings: world.rings.length,
+    rings: world.rings,
+    ringCount: world.rings.length,
     speedKts: state.vel.length() * 1.94384,
     altFt: Math.max(-20, (state.pos.y - 6) * 3.28084),
     headingDeg: ((state.heading * DEG) % 360 + 360) % 360,
@@ -112,7 +113,6 @@ function missionData() {
     wind: mission.wind + Math.sin(state.elapsed * 1.7) * mission.gust,
     targetDistance: next ? state.pos.distanceTo(next.center) : Infinity,
     pos: state.pos,
-    ringCenters: world.rings.map((ring) => ring.center),
   };
 }
 
@@ -182,7 +182,8 @@ function finish(success, reason) {
     score: state.score,
     best,
     ringIndex: state.ringIndex,
-    rings: world.rings.length,
+    rings: world.rings,
+    ringCount: world.rings.length,
     elapsed: state.elapsed,
     integrity: state.integrity,
     mission,
@@ -405,7 +406,7 @@ if (shotName) {
   cameraMode = staged.camera;
   time = staged.time;
   aircraft.updateAxes();
-  aircraft.updateCamera(0, cameraMode, true);
+  aircraft.syncShot(world, cameraMode);
   if (screen === 'title') {
     updateTitleCamera(0, true);
     ui.showTitle(0);
