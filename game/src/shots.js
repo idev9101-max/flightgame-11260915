@@ -70,6 +70,28 @@ export function stageShot(name, context) {
     return { screen: 'play', camera: 'chase', time: 19.2, missionIndex: selectedMission };
   }
 
+  if (name === 'harbor') {
+    setFlight(state, {
+      x: 355,
+      y: 38,
+      z: -480,
+      heading: -1.45,
+      pitch: 0.02,
+      roll: -0.12,
+      speed: 67,
+      climb: 1.6,
+      throttle: 0.81,
+      ringIndex: 2,
+      score: 2600,
+      timeLeft: mission.time - 24,
+      message: 'HARBOR CIRCUIT · GATE 03 AHEAD',
+      messageTime: 3,
+    });
+    world.setPassed(0, true);
+    world.setPassed(1, true);
+    return { screen: 'play', camera: 'chase', time: 14.5, missionIndex: selectedMission };
+  }
+
   if (name === 'cockpit') {
     setFlight(state, {
       x: -3,

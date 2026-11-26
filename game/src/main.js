@@ -13,7 +13,7 @@ const params = new URLSearchParams(window.location.search);
 const shotParam = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
 const seed = Number.isInteger(seedParam) ? seedParam : SEED;
-const shotName = shotParam && ['start', 'takeoff', 'chase', 'cockpit'].includes(shotParam) ? shotParam : null;
+const shotName = shotParam && ['start', 'takeoff', 'chase', 'cockpit', 'harbor'].includes(shotParam) ? shotParam : null;
 
 function stored(key, fallback) {
   try {

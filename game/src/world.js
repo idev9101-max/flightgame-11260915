@@ -68,23 +68,30 @@ function makeLabelTexture(text, accent) {
 function terrainColor(height, x, z, mission, random) {
   const color = new THREE.Color();
   const warm = mission.id === 'canyon';
+  const harbor = mission.id === 'harbor';
   const storm = mission.sky === 'storm';
-  if (height < 1.2) color.setHex(warm ? 0xd0a47a : storm ? 0x8f9b91 : 0xe0d0a6);
-  else if (height < 5) color.setHex(warm ? 0xc48c5c : 0xb8b083);
+  if (height < 1.2) color.setHex(warm ? 0xd0a47a : harbor ? 0xb9ab88 : storm ? 0x8f9b91 : 0xe0d0a6);
+  else if (height < 5) color.setHex(warm ? 0xc48c5c : harbor ? 0x9d9a7b : 0xb8b083);
   else if (height < 20) {
     const t = clamp((height - 5) / 15, 0, 1);
-    color.setHex(warm ? 0x94492f : storm ? 0x3d5b4f : 0x4c8057).lerp(new THREE.Color(warm ? 0xc47643 : storm ? 0x5b7461 : 0x78a562), t);
+    color.setHex(warm ? 0x94492f : harbor ? 0x53675d : storm ? 0x3d5b4f : 0x4c8057)
+      .lerp(new THREE.Color(warm ? 0xc47643 : harbor ? 0x828b6c : storm ? 0x5b7461 : 0x78a562), t);
   } else if (height < 58) {
     const t = clamp((height - 20) / 38, 0, 1);
-    color.setHex(warm ? 0xa85532 : storm ? 0x536363 : 0x687969).lerp(new THREE.Color(warm ? 0xe0a066 : storm ? 0x7c8b87 : 0x9a9b84), t);
+    color.setHex(warm ? 0xa85532 : harbor ? 0x596660 : storm ? 0x536363 : 0x687969)
+      .lerp(new THREE.Color(warm ? 0xe0a066 : harbor ? 0x969b87 : storm ? 0x7c8b87 : 0x9a9b84), t);
   } else {
-    color.setHex(warm ? 0xd9b08a : 0xa9b5b2).lerp(new THREE.Color(0xeef3f0), clamp((height - 62) / 52, 0, 1));
+    color.setHex(warm ? 0xd9b08a : harbor ? 0x939e9b : 0xa9b5b2).lerp(new THREE.Color(0xeef3f0), clamp((height - 62) / 52, 0, 1));
   }
   if (warm && height > 12 && height < 60) {
-    const strata = 0.94 + Math.abs(Math.sin(height * 0.34 + x * 0.004)) * 0.12;
+    const strata = 0.9 + Math.abs(Math.sin(height * 0.34 + x * 0.004)) * 0.18;
     color.multiplyScalar(strata);
   }
-  const jitter = 0.93 + random() * 0.14;
+  if (harbor && height > 2 && height < 24) {
+    const quay = 0.96 + Math.abs(Math.sin(z * 0.05 + x * 0.02)) * 0.07;
+    color.multiplyScalar(quay);
+  }
+  const jitter = 0.94 + random() * 0.12;
   color.multiplyScalar(jitter);
   return color;
 }
@@ -232,7 +239,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const water = new THREE.Mesh(
     waterGeometry,
     new THREE.MeshPhongMaterial({
-      color: mission.sky === 'storm' ? 0x2e596b : 0x2b7e9c,
+      color: mission.sky === 'storm' ? 0x2e596b : mission.id === 'harbor' ? 0x265f7d : 0x2b7e9c,
       specular: 0xc9f2ff,
       shininess: 80,
       transparent: true,
@@ -344,6 +351,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, flatShading: true });
   const buildings = new THREE.InstancedMesh(buildingGeometry, buildingMaterial, 120);
   const dummy = new THREE.Object3D();
+  const harborWindows = [];
   let buildingCount = 0;
   const towns = [
     [-255, -325, 18],
@@ -360,20 +368,50 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       const w = random.range(5, 13);
       const d = random.range(5, 13);
       const bh = random.range(5, 20);
+      const yaw = random.range(-0.2, 0.2);
       dummy.position.set(x, h + bh / 2, z);
       dummy.scale.set(w, bh, d);
-      dummy.quaternion.setFromEuler(new THREE.Euler(0, random.range(-0.2, 0.2), 0));
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0));
       dummy.updateMatrix();
       buildings.setMatrixAt(buildingCount, dummy.matrix);
       const shade = mission.sky === 'day' ? 0.72 + random() * 0.28 : 0.6 + random() * 0.3;
-      buildings.setColorAt(buildingCount, new THREE.Color(0x9fb0b8).multiplyScalar(shade));
+      buildings.setColorAt(buildingCount, new THREE.Color(mission.id === 'harbor' && cx > 200 ? 0xb0a99a : 0x9fb0b8).multiplyScalar(shade));
       buildingCount += 1;
+      if (mission.id === 'harbor' && cx > 200) {
+        for (let j = 0; j < 3; j += 1) {
+          harborWindows.push({
+            x: x - Math.sin(yaw) * (d * 0.5 + 0.18) + Math.cos(yaw) * random.range(-w * 0.3, w * 0.3),
+            y: h + bh * (0.32 + j * 0.2),
+            z: z + Math.cos(yaw) * (d * 0.5 + 0.18) + Math.sin(yaw) * random.range(-w * 0.3, w * 0.3),
+            yaw,
+            w,
+          });
+        }
+      }
     }
   }
   buildings.count = buildingCount;
   buildings.instanceMatrix.needsUpdate = true;
   if (buildings.instanceColor) buildings.instanceColor.needsUpdate = true;
   root.add(buildings);
+
+  if (harborWindows.length > 0) {
+    const windows = new THREE.InstancedMesh(
+      buildingGeometry,
+      new THREE.MeshBasicMaterial({ color: 0xffd889 }),
+      harborWindows.length,
+    );
+    for (let i = 0; i < harborWindows.length; i += 1) {
+      const win = harborWindows[i];
+      dummy.position.set(win.x, win.y, win.z);
+      dummy.scale.set(win.w * 0.22, 0.75, 0.12);
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, win.yaw, 0));
+      dummy.updateMatrix();
+      windows.setMatrixAt(i, dummy.matrix);
+    }
+    windows.instanceMatrix.needsUpdate = true;
+    root.add(windows);
+  }
 
   if (mission.id !== 'canyon') {
     const pierMaterial = new THREE.MeshStandardMaterial({ color: 0x6b4d36, roughness: 0.92, flatShading: true });
@@ -394,6 +432,192 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     const beacon = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 3, 8), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
     beacon.position.set(lighthouse.position.x, 27, -410);
     root.add(beacon);
+  }
+
+  if (mission.id === 'harbor') {
+    const quayPoints = [];
+    for (let z = -900; z <= 220; z += 14) quayPoints.push([shorelineX(z) - 17, z]);
+    flatRibbon(quayPoints, 13, 0.58, new THREE.MeshStandardMaterial({ color: 0x4d5652, roughness: 0.95, flatShading: true, side: THREE.DoubleSide }));
+
+    const warehouses = new THREE.InstancedMesh(
+      buildingGeometry,
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, flatShading: true }),
+      44,
+    );
+    const warehouseColors = [0x93836b, 0x62757c, 0xa68868, 0x5f6e71];
+    let warehouseCount = 0;
+    for (let i = 0; i < 44 && warehouseCount < 44; i += 1) {
+      const z = -770 + i * 17 + random.range(-7, 7);
+      const x = shorelineX(z) - random.range(20, 78);
+      const h = heightAt(x, z);
+      if (h < 1 || h > 26) continue;
+      const w = random.range(10, 24);
+      const d = random.range(8, 18);
+      const bh = random.range(5, 14);
+      dummy.position.set(x, h + bh / 2, z);
+      dummy.scale.set(w, bh, d);
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, random.range(-0.16, 0.16), 0));
+      dummy.updateMatrix();
+      warehouses.setMatrixAt(warehouseCount, dummy.matrix);
+      warehouses.setColorAt(warehouseCount, new THREE.Color(warehouseColors[i % warehouseColors.length]).multiplyScalar(0.88 + random() * 0.2));
+      warehouseCount += 1;
+    }
+    warehouses.count = warehouseCount;
+    warehouses.instanceMatrix.needsUpdate = true;
+    if (warehouses.instanceColor) warehouses.instanceColor.needsUpdate = true;
+    root.add(warehouses);
+
+    const steel = new THREE.MeshStandardMaterial({ color: 0x3d4a50, roughness: 0.68, metalness: 0.32, flatShading: true });
+    const lamp = new THREE.MeshBasicMaterial({ color: 0xffc36d });
+    for (const cz of [-660, -480, -300]) {
+      const cx = shorelineX(cz) + 12;
+      const pieces = [
+        [new THREE.BoxGeometry(12, 1.2, 10), cx, 1.4, cz],
+        [new THREE.BoxGeometry(1.4, 27, 1.4), cx - 4.5, 14, cz],
+        [new THREE.BoxGeometry(1.4, 27, 1.4), cx + 4.5, 14, cz],
+        [new THREE.BoxGeometry(11, 1.2, 1.6), cx, 26.5, cz],
+        [new THREE.BoxGeometry(48, 1.3, 2), cx + 12, 28.5, cz],
+        [new THREE.BoxGeometry(0.3, 12, 0.3), cx + 32, 22, cz],
+        [new THREE.BoxGeometry(2, 2, 2), cx + 32, 15.5, cz],
+        [new THREE.BoxGeometry(4.5, 3.2, 4.5), cx, 24, cz],
+      ];
+      for (const [geometry, x, y, z] of pieces) {
+        const piece = new THREE.Mesh(geometry, steel);
+        piece.position.set(x, y, z);
+        root.add(piece);
+      }
+      const cabinLight = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.6, 0.2), lamp);
+      cabinLight.position.set(cx, 24.5, cz + 2.4);
+      root.add(cabinLight);
+    }
+
+    const hulls = new THREE.InstancedMesh(
+      buildingGeometry,
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.72, flatShading: true }),
+      14,
+    );
+    const cabins = new THREE.InstancedMesh(
+      buildingGeometry,
+      new THREE.MeshStandardMaterial({ color: 0xe3dfd1, roughness: 0.78, flatShading: true }),
+      14,
+    );
+    const masts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.13, 0.13, 5, 5), steel, 14);
+    const shipColors = [0xd8d6c8, 0x7b4b42, 0x355d6c, 0xb8a77d];
+    let boatCount = 0;
+    for (let i = 0; i < 20 && boatCount < 14; i += 1) {
+      const z = -810 + i * 36 + random.range(-12, 12);
+      const x = shorelineX(z) + random.range(18, 115);
+      const len = random.range(11, 23);
+      const wid = random.range(3.6, 7);
+      const yaw = random.range(-0.4, 0.4);
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0));
+      dummy.position.set(x, 0.75, z);
+      dummy.scale.set(wid, 2.2, len);
+      dummy.updateMatrix();
+      hulls.setMatrixAt(boatCount, dummy.matrix);
+      hulls.setColorAt(boatCount, new THREE.Color(shipColors[i % shipColors.length]).multiplyScalar(0.9 + random() * 0.15));
+      dummy.position.set(x, 2.5, z + len * 0.08);
+      dummy.scale.set(wid * 0.58, 2.1, len * 0.28);
+      dummy.updateMatrix();
+      cabins.setMatrixAt(boatCount, dummy.matrix);
+      dummy.position.set(x, 4.1, z - len * 0.23);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      masts.setMatrixAt(boatCount, dummy.matrix);
+      boatCount += 1;
+    }
+    hulls.count = boatCount;
+    cabins.count = boatCount;
+    masts.count = boatCount;
+    hulls.instanceMatrix.needsUpdate = true;
+    cabins.instanceMatrix.needsUpdate = true;
+    masts.instanceMatrix.needsUpdate = true;
+    if (hulls.instanceColor) hulls.instanceColor.needsUpdate = true;
+    root.add(hulls, cabins, masts);
+
+    const freighterHull = new THREE.MeshStandardMaterial({ color: 0x354c58, roughness: 0.72, flatShading: true });
+    const freighterDeck = new THREE.MeshStandardMaterial({ color: 0x79898c, roughness: 0.8, flatShading: true });
+    const containerColors = [0xb46a4c, 0x476c7a, 0xc4a96f, 0x5b7868];
+    for (const [cz, offset, length] of [[-430, 58, 68], [-580, 74, 82]]) {
+      const cx = shorelineX(cz) + offset;
+      const yaw = cz === -430 ? 0.2 : -0.15;
+      const group = new THREE.Group();
+      group.position.set(cx, 0, cz);
+      group.rotation.y = yaw;
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(15, 5.4, length), freighterHull);
+      hull.position.y = 1.5;
+      group.add(hull);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(15.5, 0.5, length * 0.92), freighterDeck);
+      deck.position.y = 4.3;
+      group.add(deck);
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(9, 8, 12), freighterDeck);
+      bridge.position.set(0, 8.4, length * 0.31);
+      group.add(bridge);
+      const funnel = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.5, 5, 6), freighterHull);
+      funnel.position.set(0, 13.8, length * 0.3);
+      group.add(funnel);
+      for (let row = 0; row < 3; row += 1) {
+        for (let col = 0; col < 3; col += 1) {
+          const container = new THREE.Mesh(
+            new THREE.BoxGeometry(3.8, 3.2, 7),
+            new THREE.MeshStandardMaterial({ color: containerColors[(row + col + (cz === -430 ? 0 : 1)) % 4], roughness: 0.84, flatShading: true }),
+          );
+          container.position.set(-4.8 + col * 4.8, 6.2 + (row % 2) * 3.3, -length * 0.24 + row * 8);
+          group.add(container);
+        }
+      }
+      root.add(group);
+    }
+
+    const buoys = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.8, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xffc660 }),
+      18,
+    );
+    for (let i = 0; i < 18; i += 1) {
+      const z = -840 + i * 48;
+      dummy.position.set(shorelineX(z) + 34, 1, z);
+      dummy.scale.setScalar(1);
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
+      dummy.updateMatrix();
+      buoys.setMatrixAt(i, dummy.matrix);
+    }
+    buoys.instanceMatrix.needsUpdate = true;
+    root.add(buoys);
+
+    const channelLight = new THREE.MeshBasicMaterial({ color: 0xffd383 });
+    for (let z = -172; z > -310; z -= 16) {
+      for (const side of [-1, 1]) {
+        const marker = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.22, 4.5), channelLight);
+        marker.position.set(side * 11, heightAt(side * 11, z) + 0.6, z);
+        root.add(marker);
+      }
+    }
+  }
+
+  if (mission.id === 'canyon') {
+    const ledges = new THREE.InstancedMesh(
+      buildingGeometry,
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }),
+      96,
+    );
+    const strataColors = [0x8f4a30, 0xb96d43, 0xd39a67, 0x70402d];
+    for (let i = 0; i < 96; i += 1) {
+      const z = -190 - (i / 96) * 720 + random.range(-9, 9);
+      const side = i % 2 === 0 ? -1 : 1;
+      const x = guideX(z) + side * random.range(122, 235);
+      const h = heightAt(x, z);
+      const tall = i % 7 === 0;
+      dummy.position.set(x, h + random.range(-1, 14), z);
+      dummy.scale.set(random.range(11, 30), tall ? random.range(22, 44) : random.range(2.4, 5.5), random.range(10, 26));
+      dummy.quaternion.setFromEuler(new THREE.Euler(0, random.range(0, Math.PI), 0));
+      dummy.updateMatrix();
+      ledges.setMatrixAt(i, dummy.matrix);
+      ledges.setColorAt(i, new THREE.Color(strataColors[i % strataColors.length]).multiplyScalar(0.86 + random() * 0.2));
+    }
+    ledges.instanceMatrix.needsUpdate = true;
+    if (ledges.instanceColor) ledges.instanceColor.needsUpdate = true;
+    root.add(ledges);
   }
 
   const treeCount = 900;

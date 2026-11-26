@@ -5,70 +5,365 @@ import { clamp, damp, smoothstep } from './random.js';
 const DEG = 180 / Math.PI;
 const TRAIL_POINTS = 70;
 
-function createDial(title, ticks) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  const texture = new THREE.CanvasTexture(canvas);
-  if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-  let last = null;
-  function draw(value) {
-    if (value === last) return;
-    last = value;
-    ctx.clearRect(0, 0, 256, 256);
-    ctx.fillStyle = '#06131b';
-    ctx.beginPath();
-    ctx.arc(128, 128, 120, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#7ceaff';
-    ctx.lineWidth = 9;
-    ctx.stroke();
-    ctx.strokeStyle = '#b8d8e6';
-    ctx.lineWidth = 4;
-    for (let i = 0; i < ticks; i += 1) {
-      const a = (i / ticks) * Math.PI * 1.5 + Math.PI * 0.75;
-      ctx.beginPath();
-      ctx.moveTo(128 + Math.cos(a) * 88, 128 + Math.sin(a) * 88);
-      ctx.lineTo(128 + Math.cos(a) * 106, 128 + Math.sin(a) * 106);
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#8fdcf2';
-    ctx.font = 'bold 28px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(title, 128, 72);
-    ctx.font = 'bold 38px ui-monospace, monospace';
-    ctx.fillStyle = '#fff6da';
-    ctx.fillText(value, 128, 190);
-    texture.version += 1;
-  }
-  return { texture, draw };
+const PANEL_W = 1024;
+const PANEL_H = 512;
+
+function padNumber(value, digits) {
+  const safe = Number.isFinite(value) ? Math.round(value) : 0;
+  return String(Math.max(0, safe)).padStart(digits, '0');
 }
 
-function createStrip() {
+function createPanel(mission) {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 64;
+  canvas.width = PANEL_W;
+  canvas.height = PANEL_H;
   const ctx = canvas.getContext('2d');
   const texture = new THREE.CanvasTexture(canvas);
   if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-  let last = null;
-  function draw(value) {
-    if (value === last) return;
-    last = value;
-    ctx.clearRect(0, 0, 512, 64);
-    ctx.fillStyle = '#061820';
-    ctx.fillRect(0, 0, 512, 64);
-    ctx.strokeStyle = '#4bd0ee';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(3, 3, 506, 58);
-    ctx.fillStyle = '#bdf4ff';
-    ctx.font = 'bold 30px ui-monospace, monospace';
-    ctx.textAlign = 'center';
+  texture.anisotropy = 4;
+  let lastPaint = -1;
+
+  function box(x, y, w, h, r, fill, stroke) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+    else ctx.rect(x, y, w, h);
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+
+  function bezel(cx, cy, r) {
+    const rim = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+    rim.addColorStop(0, '#69808a');
+    rim.addColorStop(0.45, '#25363e');
+    rim.addColorStop(1, '#0d1a21');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 9, 0, Math.PI * 2);
+    ctx.fillStyle = rim;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#09151c';
+    ctx.fill();
+  }
+
+  function face(cx, cy, r) {
+    bezel(cx, cy, r);
+    const glass = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.4, r * 0.1, cx, cy, r);
+    glass.addColorStop(0, '#152a34');
+    glass.addColorStop(1, '#07131a');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = glass;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(150, 198, 214, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function label(text, x, y, size = 17, color = '#8fb4c3', align = 'center') {
+    ctx.fillStyle = color;
+    ctx.font = `bold ${size}px ui-monospace, "SFMono-Regular", Consolas, monospace`;
+    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
-    ctx.fillText(value, 256, 34);
+    ctx.fillText(text, x, y);
+  }
+
+  function base() {
+    const grad = ctx.createLinearGradient(0, 0, 0, PANEL_H);
+    grad.addColorStop(0, '#22323a');
+    grad.addColorStop(0.42, '#15242c');
+    grad.addColorStop(1, '#09141b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+    ctx.strokeStyle = 'rgba(168, 205, 218, 0.09)';
+    ctx.lineWidth = 2;
+    for (let x = 18; x < PANEL_W; x += 58) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, PANEL_H);
+      ctx.stroke();
+    }
+    for (const x of [16, PANEL_W - 16]) {
+      for (const y of [18, PANEL_H - 18]) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#3b4e56';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#101c22';
+        ctx.fill();
+      }
+    }
+    const sheen = ctx.createLinearGradient(0, 0, PANEL_W, 260);
+    sheen.addColorStop(0, 'rgba(185, 226, 240, 0.10)');
+    sheen.addColorStop(0.42, 'rgba(185, 226, 240, 0.02)');
+    sheen.addColorStop(1, 'rgba(185, 226, 240, 0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, PANEL_W, 290);
+  }
+
+  function roundGauge(cx, cy, r, title, readout, fraction, needleFraction) {
+    face(cx, cy, r);
+    const start = Math.PI * 0.75;
+    const sweep = Math.PI * 1.5;
+    for (let i = 0; i <= 40; i += 1) {
+      const a = start + (i / 40) * sweep;
+      const major = i % 5 === 0;
+      ctx.strokeStyle = major ? '#d3e4e9' : '#7997a3';
+      ctx.lineWidth = major ? 4 : 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (r - (major ? 20 : 14)), cy + Math.sin(a) * (r - (major ? 20 : 14)));
+      ctx.lineTo(cx + Math.cos(a) * (r - 7), cy + Math.sin(a) * (r - 7));
+      ctx.stroke();
+    }
+    label(title, cx, cy - 38, 18, '#a7c8d4');
+    box(cx - 47, cy + 22, 94, 32, 7, '#061118', 'rgba(124, 178, 198, 0.4)');
+    label(readout, cx, cy + 39, 21, '#ffe0a6');
+    const a = start + clamp(needleFraction, 0, 1) * sweep;
+    ctx.strokeStyle = '#ffb476';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - Math.cos(a) * 10, cy - Math.sin(a) * 10);
+    ctx.lineTo(cx + Math.cos(a) * (r - 12), cy + Math.sin(a) * (r - 12));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#d6e6eb';
+    ctx.fill();
+    void fraction;
+  }
+
+  function attitude(cx, cy, r, pitchDeg, rollRad) {
+    bezel(cx, cy, r);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(cx, cy);
+    ctx.rotate(-rollRad);
+    const horizon = clamp(pitchDeg, -40, 40) * 2.35;
+    const sky = ctx.createLinearGradient(0, -r, 0, horizon);
+    sky.addColorStop(0, '#1c4c7c');
+    sky.addColorStop(1, '#8dbbd4');
+    ctx.fillStyle = sky;
+    ctx.fillRect(-r, -r, r * 2, r + horizon);
+    const ground = ctx.createLinearGradient(0, horizon, 0, r);
+    ground.addColorStop(0, '#a06e42');
+    ground.addColorStop(1, '#4d3120');
+    ctx.fillStyle = ground;
+    ctx.fillRect(-r, horizon, r * 2, r * 2);
+    ctx.strokeStyle = '#f2d8a3';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-r, horizon);
+    ctx.lineTo(r, horizon);
+    ctx.stroke();
+    for (let deg = -30; deg <= 30; deg += 10) {
+      if (deg === 0) continue;
+      const y = horizon - deg * 2.35;
+      if (Math.abs(y) > r - 8) continue;
+      ctx.strokeStyle = 'rgba(245, 235, 210, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-24, y);
+      ctx.lineTo(24, y);
+      ctx.stroke();
+      label(String(Math.abs(deg)), 34, y, 13, '#f7e7c5');
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#9dbcc7';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = '#ffd48a';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.52, 0);
+    ctx.lineTo(-12, 0);
+    ctx.moveTo(12, 0);
+    ctx.lineTo(r * 0.52, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffd48a';
+    ctx.fill();
+    for (let deg = -60; deg <= 60; deg += 15) {
+      const a = -Math.PI / 2 + (deg * Math.PI) / 180;
+      ctx.strokeStyle = deg === 0 ? '#ffe0a6' : 'rgba(190, 216, 226, 0.8)';
+      ctx.lineWidth = deg === 0 ? 4 : 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (r - 14), Math.sin(a) * (r - 14));
+      ctx.lineTo(Math.cos(a) * (r - 5), Math.sin(a) * (r - 5));
+      ctx.stroke();
+    }
+    ctx.rotate(-rollRad);
+    ctx.fillStyle = '#ffcf70';
+    ctx.beginPath();
+    ctx.moveTo(0, -r + 12);
+    ctx.lineTo(-7, -r + 25);
+    ctx.lineTo(7, -r + 25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    label('ATTITUDE', cx, cy + r - 14, 15, '#c8dde4');
+  }
+
+  function verticalSpeed(cx, cy, r, fpm) {
+    face(cx, cy, r);
+    for (let i = -4; i <= 4; i += 1) {
+      const a = -Math.PI / 2 + (i / 4) * Math.PI * 0.72;
+      ctx.strokeStyle = i === 0 ? '#d9e8ec' : '#7f9da8';
+      ctx.lineWidth = i === 0 ? 3 : 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (r - 17), cy + Math.sin(a) * (r - 17));
+      ctx.lineTo(cx + Math.cos(a) * (r - 7), cy + Math.sin(a) * (r - 7));
+      ctx.stroke();
+    }
+    const fraction = clamp(fpm / 2000, -1, 1);
+    const a = -Math.PI / 2 + fraction * Math.PI * 0.72;
+    ctx.strokeStyle = '#ffbe7a';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * (r - 15), cy + Math.sin(a) * (r - 15));
+    ctx.stroke();
+    label('V/S', cx, cy - 26, 16, '#a7c8d4');
+    box(cx - 39, cy + 16, 78, 26, 6, '#061118', 'rgba(124, 178, 198, 0.4)');
+    label(`${fpm >= 0 ? '+' : '-'}${padNumber(Math.abs(fpm), 3)}`, cx, cy + 30, 17, fpm < -800 ? '#ff9982' : '#ffe0a6');
+  }
+
+  function headingTape(x, y, w, h, heading) {
+    box(x, y, w, h, 12, '#07141b', 'rgba(142, 194, 212, 0.42)');
+    label('HDG', x + 34, y + h / 2, 17, '#a7c8d4');
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 78, y + 6, w - 110, h - 12);
+    ctx.clip();
+    const center = x + 78 + (w - 110) / 2;
+    for (let d = -70; d <= 70; d += 5) {
+      const deg = ((heading + d) % 360 + 360) % 360;
+      const px = center + d * 3.4;
+      const major = deg % 10 === 0;
+      ctx.strokeStyle = major ? '#d6e7ec' : '#6f8f9c';
+      ctx.lineWidth = major ? 3 : 2;
+      ctx.beginPath();
+      ctx.moveTo(px, y + h - 15);
+      ctx.lineTo(px, y + h - (major ? 27 : 21));
+      ctx.stroke();
+      if (deg % 30 === 0) {
+        const cardinal = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[deg];
+        label(cardinal ?? String(deg), px, y + 21, cardinal ? 19 : 16, cardinal ? '#ffcf70' : '#c6dce4');
+      }
+    }
+    ctx.restore();
+    ctx.fillStyle = '#ffcf70';
+    ctx.beginPath();
+    ctx.moveTo(center, y + h - 6);
+    ctx.lineTo(center - 8, y + h - 19);
+    ctx.lineTo(center + 8, y + h - 19);
+    ctx.closePath();
+    ctx.fill();
+    box(x + w - 88, y + 5, 80, h - 10, 10, '#0d2029', 'rgba(142, 194, 212, 0.42)');
+    label(`${padNumber(heading, 3)}°`, x + w - 48, y + h / 2, 23, '#ffe0a6');
+  }
+
+  function warnLight(x, y, w, h, text, active, color) {
+    box(x, y, w, h, 7, active ? color : '#0c1b22', active ? color : 'rgba(124, 168, 188, 0.36)');
+    label(text, x + w / 2, y + h / 2, 16, active ? '#09151a' : '#7f9dab');
+  }
+
+  function draw(data, force) {
+    const elapsed = data.elapsed ?? 0;
+    if (!force && elapsed - lastPaint < 0.06) return;
+    lastPaint = elapsed;
+    const speed = Number.isFinite(data.speed) ? data.speed : 0;
+    const alt = Number.isFinite(data.alt) ? data.alt : 0;
+    const heading = Number.isFinite(data.heading) ? data.heading : 0;
+    const vsi = Number.isFinite(data.vsi) ? data.vsi : 0;
+    const throttle = Number.isFinite(data.throttle) ? data.throttle : 0;
+    const pitchDeg = Number.isFinite(data.pitch) ? data.pitch : 0;
+    const rollRad = Number.isFinite(data.roll) ? data.roll : 0;
+    const stall = Boolean(data.stall);
+    const gear = Boolean(data.gear);
+    const flaps = Boolean(data.flaps);
+    const rollDeg = Math.abs(rollRad * 180 / Math.PI);
+    base();
+
+    box(24, 18, 332, 62, 10, '#071720', 'rgba(109, 208, 232, 0.4)');
+    label('NAV / NEXT GATE', 44, 38, 16, '#8fb4c3', 'left');
+    label(`GATE ${padNumber(data.gateIndex ?? 0, 2)}`, 44, 62, 22, '#ffe0a6', 'left');
+    label(`BRG ${padNumber(data.bearing ?? 0, 3)}°`, 205, 38, 18, '#9fe9fa', 'left');
+    label(`RNG ${Math.round(data.range ?? 0)} m`, 205, 62, 18, '#9fe9fa', 'left');
+
+    box(668, 18, 332, 62, 10, '#071720', 'rgba(142, 194, 212, 0.36)');
+    label(String(data.missionName ?? 'FLIGHT PLAN').slice(0, 18), 686, 38, 17, '#ffcf70', 'left');
+    label(`T+ ${padNumber(data.timeLeft ?? 0, 3)} s`, 686, 62, 18, '#d5e8ee', 'left');
+    label(`WIND ${(data.wind ?? 0).toFixed(1)}`, 978, 62, 17, '#a7c8d4', 'right');
+
+    roundGauge(150, 184, 75, 'AIRSPEED', `${padNumber(speed, 3)} KT`, clamp(speed / 180, 0, 1), clamp(speed / 180, 0, 1));
+    attitude(370, 184, 90, pitchDeg, rollRad);
+    verticalSpeed(585, 184, 57, vsi);
+    roundGauge(825, 184, 75, 'ALTITUDE', `${padNumber(alt, 4)} FT`, clamp(alt / 2500, 0, 1), (alt / 1000) % 1);
+
+    headingTape(24, 300, 640, 72, heading);
+
+    box(694, 300, 306, 72, 10, '#0b1b23', 'rgba(142, 194, 212, 0.3)');
+    warnLight(706, 312, 92, 22, 'STALL', stall && Math.floor(elapsed * 4) % 2 === 0, '#ff6e62');
+    warnLight(806, 312, 92, 22, 'GEAR', !gear && alt < 600, '#ffc264');
+    warnLight(906, 312, 82, 22, 'BANK', rollDeg > 24, '#ffc264');
+    warnLight(706, 344, 92, 22, 'SINK', vsi < -800, '#ff9978');
+    warnLight(806, 344, 192, 22, gear ? 'GEAR DOWN' : 'GEAR UP', true, '#59dba0');
+
+    box(24, 390, 430, 92, 12, '#0a1920', 'rgba(142, 194, 212, 0.32)');
+    label('THROTTLE', 46, 412, 16, '#9fbfcb', 'left');
+    box(46, 430, 264, 18, 8, '#050e14', 'rgba(124, 178, 198, 0.35)');
+    ctx.fillStyle = throttle > 0.82 ? '#ffbc6e' : '#61d9c2';
+    ctx.fillRect(49, 433, 258 * clamp(throttle, 0, 1), 12);
+    label(`${Math.round(throttle * 100)}%`, 344, 440, 22, '#ffe0a6', 'left');
+    label(`RPM ${padNumber(700 + throttle * 1900, 4)}`, 46, 466, 15, '#8fb4c3', 'left');
+    label('FLAPS', 210, 466, 15, '#8fb4c3', 'left');
+    label(flaps ? 'DOWN' : 'UP', 282, 466, 17, flaps ? '#ffcf70' : '#a7c8d4', 'left');
+
+    box(478, 390, 522, 92, 12, '#0a1920', 'rgba(142, 194, 212, 0.32)');
+    label('LANDING GEAR', 500, 412, 16, '#9fbfcb', 'left');
+    for (let i = 0; i < 3; i += 1) {
+      const x = 624 + i * 34;
+      ctx.beginPath();
+      ctx.arc(x, 440, 10, 0, Math.PI * 2);
+      ctx.fillStyle = gear ? '#59dba0' : '#263b45';
+      ctx.fill();
+      ctx.strokeStyle = gear ? '#b6ffe0' : '#4b6672';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    label(gear ? 'DOWN & LOCKED' : 'UP', 754, 440, 19, gear ? '#a8f5cf' : '#ffc264', 'left');
+    label(`AIRFRAME ${padNumber(data.integrity ?? 100, 3)}%`, 500, 466, 15, '#8fb4c3', 'left');
+    label(`SCORE ${padNumber(data.score ?? 0, 6)}`, 978, 466, 15, '#8fb4c3', 'right');
+
+    ctx.save();
+    ctx.globalAlpha = 0.045;
+    ctx.translate(-70, 0);
+    ctx.rotate(-0.32);
+    ctx.fillStyle = '#d6f6ff';
+    ctx.fillRect(110, -100, 58, 760);
+    ctx.fillRect(210, -100, 12, 760);
+    ctx.restore();
     texture.version += 1;
   }
+
   return { texture, draw };
 }
 
@@ -205,106 +500,103 @@ function buildBody() {
   return { group, propeller, gearGroup, flaps, exhaust };
 }
 
-function buildCockpit() {
+function buildCockpit(mission) {
   const group = new THREE.Group();
-  const frame = new THREE.MeshStandardMaterial({ color: 0x30454f, roughness: 0.55, metalness: 0.4, flatShading: true, emissive: 0x0b1c24, emissiveIntensity: 0.6, fog: false });
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x102b38, emissive: 0x12607a, emissiveIntensity: 1.25, roughness: 0.7, fog: false });
-  const glow = new THREE.MeshBasicMaterial({ color: 0x9af2ff, fog: false });
+  const panel = createPanel(mission);
+  const shell = new THREE.MeshStandardMaterial({ color: 0x1c2c34, roughness: 0.72, metalness: 0.28, flatShading: true, emissive: 0x07131a, emissiveIntensity: 0.5, fog: false });
+  const trim = new THREE.MeshStandardMaterial({ color: 0x42545c, roughness: 0.58, metalness: 0.45, flatShading: true, fog: false });
+  const edge = new THREE.MeshBasicMaterial({ color: 0x7d9aa4, fog: false });
 
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.52, 0.34), panelMat);
-  panel.position.set(0, -0.48, -0.92);
-  panel.rotation.x = -0.28;
-  group.add(panel);
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.76, 0.18), shell);
+  backing.position.set(0, -0.47, -1.2);
+  backing.rotation.x = -0.2;
+  group.add(backing);
 
-  const dials = [];
-  const dialInfo = [
-    { title: 'AIRSPEED', value: '000 KT', x: -0.62 },
-    { title: 'ALTITUDE', value: '0000 FT', x: 0 },
-    { title: 'HEADING', value: '000°', x: 0.62 },
-  ];
-  for (const info of dialInfo) {
-    const dial = createDial(info.title, 10);
-    dial.draw(info.value);
-    const face = new THREE.Mesh(
-      new THREE.CircleGeometry(0.205, 24),
-      new THREE.MeshBasicMaterial({ map: dial.texture, fog: false }),
-    );
-    face.position.set(info.x, -0.38, -0.755);
-    face.rotation.x = -0.28;
-    group.add(face);
-    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.215, 0.02, 6, 24), glow);
-    bezel.position.copy(face.position);
-    bezel.position.z += 0.012;
-    bezel.rotation.x = -0.28;
-    group.add(bezel);
-    const needlePivot = new THREE.Group();
-    needlePivot.position.copy(face.position);
-    needlePivot.position.z += 0.024;
-    needlePivot.rotation.x = -0.28;
-    const needle = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.17, 0.012), new THREE.MeshBasicMaterial({ color: 0xffb37d, fog: false }));
-    needle.position.y = 0.07;
-    needlePivot.add(needle);
-    group.add(needlePivot);
-    dials.push({ pivot: needlePivot, dial });
-  }
-
-  const strip = createStrip();
-  strip.draw('GEAR DN  FLAPS UP  THR 74%');
-  const readout = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.86, 0.23),
-    new THREE.MeshBasicMaterial({ map: strip.texture, fog: false, transparent: true, depthWrite: false }),
+  const instrumentMaterial = new THREE.MeshBasicMaterial({ map: panel.texture, fog: false, side: THREE.DoubleSide });
+  instrumentMaterial.color.multiplyScalar(3.1);
+  const instruments = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.0, 0.68),
+    instrumentMaterial,
   );
-  readout.position.set(0, -0.66, -0.735);
-  readout.rotation.x = -0.28;
-  group.add(readout);
+  instruments.position.set(0, -0.47, -1.1);
+  instruments.rotation.x = -0.2;
+  group.add(instruments);
+
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.98, 0.66),
+    new THREE.MeshBasicMaterial({ color: 0xaee6fa, transparent: true, opacity: 0.045, fog: false, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  glass.position.set(0, -0.465, -1.085);
+  glass.rotation.x = -0.2;
+  group.add(glass);
+
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(2.12, 0.1, 0.26), shell);
+  hood.position.set(0, -0.09, -0.99);
+  hood.rotation.x = -0.2;
+  group.add(hood);
+  const hoodLip = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.015, 0.025), edge);
+  hoodLip.position.set(0, -0.035, -0.87);
+  group.add(hoodLip);
 
   for (const side of [-1, 1]) {
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.25, 0.07), frame);
-    strut.position.set(side * 0.88, 0.02, -1.05);
-    strut.rotation.z = side * 0.13;
-    group.add(strut);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 1.4), frame);
-    rail.position.set(side * 0.98, -0.42, -0.55);
-    group.add(rail);
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.15, 0.075), shell);
+    pillar.position.set(side * 0.88, 0.05, -1.12);
+    pillar.rotation.z = side * 0.16;
+    group.add(pillar);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 1.25), shell);
+    sill.position.set(side * 0.99, -0.27, -0.55);
+    group.add(sill);
+    const windowGlint = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.018, 0.42),
+      new THREE.MeshBasicMaterial({ color: 0xc2eaf6, transparent: true, opacity: 0.12, fog: false, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    windowGlint.position.set(side * 0.72, 0.22, -1.13);
+    windowGlint.rotation.z = side * 0.42;
+    group.add(windowGlint);
   }
-  const topStrut = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.06, 0.08), frame);
-  topStrut.position.set(0, 0.62, -1.06);
-  group.add(topStrut);
+  const bow = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.055, 0.075), shell);
+  bow.position.set(0, 0.58, -1.13);
+  group.add(bow);
+  const bowTrim = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.012, 0.02), trim);
+  bowTrim.position.set(0, 0.545, -1.08);
+  group.add(bowTrim);
 
-  const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.024, 6, 18), frame);
-  yoke.position.set(0, -0.36, -0.52);
-  yoke.rotation.x = 0.35;
+  const yoke = new THREE.Group();
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.045, 0.045), trim);
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.04), shell);
+  stem.position.y = -0.11;
+  const hub = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.08), shell);
+  yoke.add(grip, stem, hub);
+  yoke.position.set(0, -0.33, -0.56);
+  yoke.rotation.x = -0.3;
   group.add(yoke);
-  const yokeStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.28, 6), frame);
-  yokeStem.position.set(0, -0.55, -0.6);
-  yokeStem.rotation.x = 0.6;
-  group.add(yokeStem);
 
-  const glare = new THREE.Mesh(
-    new THREE.BoxGeometry(2.1, 0.04, 0.35),
-    new THREE.MeshBasicMaterial({ color: 0x2e6879, transparent: true, opacity: 0.65, fog: false }),
-  );
-  glare.position.set(0, -0.21, -0.93);
-  group.add(glare);
+  const quadrant = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.13, 0.16), shell);
+  quadrant.position.set(0.75, -0.35, -0.78);
+  group.add(quadrant);
+  const throttle = new THREE.Group();
+  throttle.position.set(0.75, -0.29, -0.76);
+  const lever = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.17, 0.045), trim);
+  lever.position.y = 0.075;
+  const knob = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.055, 0.07), shell);
+  knob.position.y = 0.16;
+  throttle.add(lever, knob);
+  group.add(throttle);
 
-  const lamp = new THREE.PointLight(0x9ceeff, 2.1, 3);
-  lamp.position.set(0, -0.15, -0.35);
-  group.add(lamp);
+  panel.draw({
+    speed: 0, alt: 0, heading: 0, vsi: 0, throttle: 0.55, pitch: 0, roll: 0,
+    stall: false, gear: true, flaps: false, gateIndex: 1, bearing: 0, range: 0,
+    timeLeft: mission?.time ?? 0, missionName: mission?.name ?? 'FLIGHT PLAN',
+    integrity: 100, score: 0, elapsed: 0, wind: mission?.wind ?? 0,
+  }, true);
 
-  const hudGlass = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.42, 0.3),
-    new THREE.MeshBasicMaterial({ color: 0x7ce9ff, transparent: true, opacity: 0.12, fog: false, depthWrite: false }),
-  );
-  hudGlass.position.set(0, 0.05, -0.94);
-  group.add(hudGlass);
-
-  return { group, dials, yoke, lamp, strip };
+  return { group, panel, yoke, throttle };
 }
 
 export function createAircraft(scene, camera, mission) {
   const body = buildBody();
   scene.add(body.group);
-  const cockpit = buildCockpit();
+  const cockpit = buildCockpit(mission);
   cockpit.group.visible = false;
   camera.add(cockpit.group);
 
@@ -380,6 +672,7 @@ export function createAircraft(scene, camera, mission) {
   const lookTarget = new THREE.Vector3();
   let propAngle = 0;
   let shake = 0;
+  let activeWorld = null;
 
   function updateAxes() {
     euler.set(state.pitch, -state.heading, state.roll);
@@ -480,6 +773,7 @@ export function createAircraft(scene, camera, mission) {
   }
 
   function update(dt, controls, world, events) {
+    activeWorld = world;
     if (state.crashed) {
       updateSparks(dt);
       updateAxes();
@@ -644,22 +938,43 @@ export function createAircraft(scene, camera, mission) {
       camera.fov = 62 + clamp(state.vel.length() * 0.045, 0, 5);
     }
     camera.updateProjectionMatrix();
+    if (!cockpitMode) return;
     const speedKts = state.vel.length() * 1.94384;
     const altFt = Math.max(-20, (state.pos.y - RUNWAY_Y) * 3.28084);
     const headingDeg = ((state.heading * DEG) % 360 + 360) % 360;
-    const readings = [
-      `${String(Math.round(speedKts)).padStart(3, '0')} KT`,
-      `${String(Math.round(altFt)).padStart(4, '0')} FT`,
-      `${String(Math.round(headingDeg)).padStart(3, '0')}°`,
-    ];
-    for (let i = 0; i < cockpit.dials.length; i += 1) {
-      cockpit.dials[i].dial.draw(readings[i]);
+    const nextRing = activeWorld?.rings?.[state.ringIndex];
+    let bearing = 0;
+    let range = 0;
+    if (nextRing) {
+      const dx = nextRing.center.x - state.pos.x;
+      const dz = nextRing.center.z - state.pos.z;
+      range = Math.hypot(dx, dz);
+      bearing = ((Math.atan2(dx, -dz) * DEG - headingDeg) % 360 + 540) % 360;
+      if (bearing > 180) bearing -= 360;
     }
-    cockpit.dials[0].pivot.rotation.z = -clamp(speedKts / 180, 0, 1) * 4.5 + 2.25;
-    cockpit.dials[1].pivot.rotation.z = -clamp(altFt / 2200, 0, 1) * 4.5 + 2.25;
-    cockpit.dials[2].pivot.rotation.z = -(headingDeg / 360) * Math.PI * 2;
-    cockpit.strip.draw(`GEAR ${state.gear ? 'DN ' : 'UP '}  FLAPS ${state.flaps ? 'DN ' : 'UP '}  THR ${String(Math.round(state.throttle * 100)).padStart(2, '0')}%`);
+    cockpit.panel.draw({
+      speed: speedKts,
+      alt: altFt,
+      heading: headingDeg,
+      vsi: state.vel.y * 196.85,
+      throttle: state.throttle,
+      pitch: state.pitch * DEG,
+      roll: state.roll,
+      stall: state.stalled,
+      gear: state.gear,
+      flaps: state.flaps,
+      gateIndex: state.ringIndex + 1,
+      bearing,
+      range,
+      timeLeft: state.timeLeft,
+      missionName: mission.name,
+      integrity: state.integrity,
+      score: state.score,
+      elapsed: state.elapsed,
+      wind: mission.wind + Math.sin(state.elapsed * 1.7) * mission.gust,
+    }, force || dt === 0);
     cockpit.yoke.rotation.z = -state.roll * 0.5;
+    cockpit.throttle.rotation.z = 0.55 - state.throttle * 1.1;
   }
 
   return {
@@ -668,6 +983,7 @@ export function createAircraft(scene, camera, mission) {
     updateCamera,
     updateAxes,
     syncShot(world, mode) {
+      activeWorld = world;
       body.group.position.copy(state.pos);
       body.group.quaternion.copy(quaternion);
       body.gearGroup.visible = state.gear;
@@ -731,6 +1047,7 @@ export function createAircraft(scene, camera, mission) {
       shadow.geometry.dispose();
       shadow.material.dispose();
       camera.remove(cockpit.group);
+      cockpit.panel.texture.dispose();
     },
   };
 }
