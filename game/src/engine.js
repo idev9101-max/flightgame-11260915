@@ -852,6 +852,8 @@ class Material {
     this.roughness = options.roughness ?? 0.8;
     this.metalness = options.metalness ?? 0;
     this.shininess = options.shininess ?? 20;
+    this.detail = options.detail ?? 0;
+    this.groundShade = options.groundShade ?? 0;
     this.depthWrite = options.depthWrite ?? true;
     this.depthTest = options.depthTest ?? true;
     this.type = 'standard';
@@ -1033,6 +1035,9 @@ uniform float uOpacity;
 uniform float uEmissiveIntensity;
 uniform float uFogDensity;
 uniform float uShininess;
+uniform float uDetail;
+uniform float uGroundShade;
+uniform float uUnlit;
 uniform bool uUseTexture;
 uniform bool uVertexColor;
 uniform bool uFog;
@@ -1041,6 +1046,18 @@ varying vec3 vNormal;
 varying vec3 vWorld;
 varying vec3 vColor;
 varying vec2 vUv;
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 345.45));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+float noise21(vec2 p){
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+             mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 void main(){
   vec4 tex = vec4(1.0);
   if (uUseTexture) tex = texture2D(uTexture, vUv);
@@ -1049,18 +1066,27 @@ void main(){
   float diff = max(dot(n, normalize(uLightDir)), 0.0);
   float hemi = 0.5 + 0.5 * n.y;
   vec3 amb = mix(uHemiGround, uHemiSky, hemi) * 0.55 + uAmbient * 0.55;
-  vec3 lit = base * (amb + uLightColor * diff * 0.78);
+  vec3 lit = mix(base * (amb + uLightColor * diff * 0.78), base, uUnlit);
+  float grain = noise21(vWorld.xz * 0.095) * 0.5 + noise21(vWorld.xz * 0.41) * 0.32 + noise21(vWorld.xz * 1.6) * 0.18;
+  lit *= mix(1.0 + (grain - 0.5) * uDetail, 1.0, uUnlit);
+  float slope = mix(1.0, 0.84 + 0.16 * max(n.y, 0.0), uGroundShade);
+  float hollow = mix(1.0, mix(0.78, 1.0, smoothstep(-8.0, 34.0, vWorld.y)), uGroundShade);
+  lit *= mix(slope * hollow, 1.0, uUnlit);
   vec3 viewDir = normalize(uCamera - vWorld);
-  float spec = pow(max(dot(reflect(-normalize(uLightDir), n), viewDir), 0.0), uShininess) * 0.16;
-  lit += vec3(spec) * (0.5 + uShininess / 120.0);
-  lit += uEmissive * uEmissiveIntensity;
+  float spec = pow(max(dot(reflect(-normalize(uLightDir), n), viewDir), 0.0), uShininess) * 0.2;
+  lit += vec3(spec) * (0.5 + uShininess / 100.0) * (1.0 - uUnlit);
+  float rim = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0) * 0.045;
+  lit += uLightColor * rim * (1.0 - uUnlit);
+  lit += uEmissive * uEmissiveIntensity * (1.0 - uUnlit);
+  lit = clamp((lit - 0.5) * 1.1 + 0.5, 0.0, 2.0);
+  lit = mix(vec3(dot(lit, vec3(0.299, 0.587, 0.114))), lit, 1.12);
   float alpha = uOpacity * tex.a;
   if (uFog) {
     float d = length(uCamera - vWorld);
     float f = 1.0 - exp(-uFogDensity * uFogDensity * d * d);
     lit = mix(lit, uFogColor, clamp(f, 0.0, 0.94));
   }
-  gl_FragColor = vec4(lit, alpha);
+  gl_FragColor = vec4(max(lit, 0.0), alpha);
 }`;
 
 const SIMPLE_VERT = `
@@ -1151,7 +1177,7 @@ export class WebGLRenderer {
       simple: program(gl, SIMPLE_VERT, SIMPLE_FRAG),
       sprite: program(gl, SPRITE_VERT, SPRITE_FRAG),
     };
-    const names = ['uModel', 'uViewProj', 'uNormalMatrix', 'uColor', 'uEmissive', 'uFogColor', 'uLightDir', 'uLightColor', 'uAmbient', 'uHemiSky', 'uHemiGround', 'uCamera', 'uOpacity', 'uEmissiveIntensity', 'uFogDensity', 'uShininess', 'uUseTexture', 'uVertexColor', 'uFog', 'uTexture'];
+    const names = ['uModel', 'uViewProj', 'uNormalMatrix', 'uColor', 'uEmissive', 'uFogColor', 'uLightDir', 'uLightColor', 'uAmbient', 'uHemiSky', 'uHemiGround', 'uCamera', 'uOpacity', 'uEmissiveIntensity', 'uFogDensity', 'uShininess', 'uDetail', 'uGroundShade', 'uUnlit', 'uUseTexture', 'uVertexColor', 'uFog', 'uTexture'];
     this.locations = {
       standard: uniformLocations(gl, this.programs.standard, names),
       instanced: uniformLocations(gl, this.programs.instanced, names),
@@ -1413,6 +1439,9 @@ export class WebGLRenderer {
     gl.uniform1f(locations.uEmissiveIntensity, material.emissiveIntensity);
     gl.uniform1f(locations.uFogDensity, sceneState.fog.density);
     gl.uniform1f(locations.uShininess, Math.max(4, material.shininess));
+    gl.uniform1f(locations.uDetail, material.detail);
+    gl.uniform1f(locations.uGroundShade, material.groundShade);
+    gl.uniform1f(locations.uUnlit, material.type === 'basic' ? 1 : 0);
     gl.uniform1i(locations.uUseTexture, material.map ? 1 : 0);
     gl.uniform1i(locations.uVertexColor, material.vertexColors || instanced ? 1 : 0);
     gl.uniform1i(locations.uFog, material.fog && sceneState.enabled ? 1 : 0);

@@ -1,6 +1,7 @@
 import * as THREE from './engine.js';
 import { RUNWAY_FAR, RUNWAY_HALF_WIDTH, RUNWAY_NEAR, RUNWAY_Y } from './config.js';
 import { clamp, damp, smoothstep } from './random.js';
+import { makeGlowTexture, makePropTexture } from './worldAssets.js';
 
 const DEG = 180 / Math.PI;
 const TRAIL_POINTS = 70;
@@ -56,8 +57,8 @@ function createPanel(mission) {
   function face(cx, cy, r) {
     bezel(cx, cy, r);
     const glass = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.4, r * 0.1, cx, cy, r);
-    glass.addColorStop(0, '#152a34');
-    glass.addColorStop(1, '#07131a');
+    glass.addColorStop(0, '#2b5060');
+    glass.addColorStop(1, '#102734');
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = glass;
@@ -72,15 +73,24 @@ function createPanel(mission) {
     ctx.font = `bold ${size}px ui-monospace, "SFMono-Regular", Consolas, monospace`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = size >= 18 ? 9 : 4;
     ctx.fillText(text, x, y);
+    ctx.shadowBlur = 0;
   }
 
   function base() {
     const grad = ctx.createLinearGradient(0, 0, 0, PANEL_H);
-    grad.addColorStop(0, '#22323a');
-    grad.addColorStop(0.42, '#15242c');
-    grad.addColorStop(1, '#09141b');
+    grad.addColorStop(0, '#3b5865');
+    grad.addColorStop(0.38, '#203b49');
+    grad.addColorStop(1, '#112530');
     ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+    const wash = ctx.createLinearGradient(0, 0, PANEL_W, PANEL_H);
+    wash.addColorStop(0, 'rgba(255,196,122,0.09)');
+    wash.addColorStop(0.5, 'rgba(115,222,255,0.03)');
+    wash.addColorStop(1, 'rgba(255,151,95,0.07)');
+    ctx.fillStyle = wash;
     ctx.fillRect(0, 0, PANEL_W, PANEL_H);
     ctx.strokeStyle = 'rgba(168, 205, 218, 0.09)';
     ctx.lineWidth = 2;
@@ -126,7 +136,7 @@ function createPanel(mission) {
     }
     label(title, cx, cy - 38, 18, '#a7c8d4');
     box(cx - 47, cy + 22, 94, 32, 7, '#061118', 'rgba(124, 178, 198, 0.4)');
-    label(readout, cx, cy + 39, 21, '#ffe0a6');
+    label(readout, cx, cy + 39, 22, '#fff1c7');
     const a = start + clamp(needleFraction, 0, 1) * sweep;
     ctx.strokeStyle = '#ffb476';
     ctx.lineWidth = 5;
@@ -354,6 +364,17 @@ function createPanel(mission) {
     label(`SCORE ${padNumber(data.score ?? 0, 6)}`, 978, 466, 15, '#8fb4c3', 'right');
 
     ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const strip = ctx.createLinearGradient(0, 0, PANEL_W, 0);
+    strip.addColorStop(0, 'rgba(90,214,255,0.24)');
+    strip.addColorStop(0.5, 'rgba(255,205,120,0.15)');
+    strip.addColorStop(1, 'rgba(90,214,255,0.24)');
+    ctx.fillStyle = strip;
+    ctx.fillRect(30, 12, PANEL_W - 60, 3);
+    ctx.fillRect(30, PANEL_H - 16, PANEL_W - 60, 2);
+    ctx.restore();
+
+    ctx.save();
     ctx.globalAlpha = 0.045;
     ctx.translate(-70, 0);
     ctx.rotate(-0.32);
@@ -369,10 +390,10 @@ function createPanel(mission) {
 
 function buildBody() {
   const group = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color: 0xfff7e6, roughness: 0.42, metalness: 0.18, flatShading: true, emissive: 0x3d2b1e, emissiveIntensity: 0.32 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0xf06a45, roughness: 0.44, metalness: 0.24, flatShading: true, emissive: 0x5c1f10, emissiveIntensity: 0.46 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2932, roughness: 0.66, metalness: 0.36, flatShading: true });
-  const trim = new THREE.MeshStandardMaterial({ color: 0xc8d9dc, roughness: 0.5, metalness: 0.5, flatShading: true });
+  const paint = new THREE.MeshStandardMaterial({ color: 0xfff7e6, roughness: 0.36, metalness: 0.2, shininess: 48, detail: 0.12, flatShading: true, emissive: 0x3d2b1e, emissiveIntensity: 0.3 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0xf06a45, roughness: 0.38, metalness: 0.26, shininess: 56, detail: 0.1, flatShading: true, emissive: 0x5c1f10, emissiveIntensity: 0.42 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b2932, roughness: 0.62, metalness: 0.4, shininess: 36, flatShading: true });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xd8e8ea, roughness: 0.4, metalness: 0.58, shininess: 70, flatShading: true });
   const glass = new THREE.MeshStandardMaterial({ color: 0x8fd9ee, transparent: true, opacity: 0.72, roughness: 0.14, metalness: 0.32, emissive: 0x174255, emissiveIntensity: 0.75, side: THREE.DoubleSide });
 
   const sections = [
@@ -407,6 +428,18 @@ function buildBody() {
   cowl.rotation.x = Math.PI / 2;
   cowl.position.z = -6.35;
   group.add(cowl);
+  for (const z of [-7.02, -6.05, -5.62]) {
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(z === -6.05 ? 0.79 : 0.81, 0.045, 5, 12), trim);
+    lip.position.z = z;
+    group.add(lip);
+  }
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2;
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1.18, 0.025), dark);
+    seam.position.set(Math.cos(angle) * 0.78, Math.sin(angle) * 0.78, -6.35);
+    seam.rotation.z = angle;
+    group.add(seam);
+  }
   const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.44, 1.2, 10), trim);
   spinner.rotation.x = -Math.PI / 2;
   spinner.position.z = -8.45;
@@ -469,8 +502,27 @@ function buildBody() {
   const bellyStripe = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 9.4), accent);
   bellyStripe.position.set(0, -0.8, 0.1);
   group.add(bellyStripe);
+  for (const side of [-1, 1]) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 7.6), trim);
+    seam.position.set(side * 0.9, 0.16, 0.6);
+    group.add(seam);
+    const flash = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.36, 3.2), accent);
+    flash.position.set(side * 0.92, 0.02, 2.2);
+    group.add(flash);
+    const wingBar = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.055, 0.26), trim);
+    wingBar.position.set(side * 4.7, -0.16, -0.72);
+    group.add(wingBar);
+  }
 
   plate([[-2.9, 4.6], [2.9, 4.6], [2.3, 6.2], [-2.3, 6.2]], 0.18, paint, 0.4);
+  for (const side of [-1, 1]) {
+    const elevator = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.95), trim);
+    elevator.position.set(side * 1.45, 0.48, 6.15);
+    group.add(elevator);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.4, 1.2), accent);
+    tip.position.set(side * 2.78, 0.48, 5.4);
+    group.add(tip);
+  }
   const finVertices = [
     [-0.17, 0.55, 4.8], [0.17, 0.55, 4.8],
     [-0.17, 3.45, 6.55], [0.17, 3.45, 6.55],
@@ -483,9 +535,17 @@ function buildBody() {
   finGeometry.setIndex([0, 2, 4, 1, 5, 3, 0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 0, 5, 1, 0]);
   finGeometry.computeVertexNormals();
   group.add(new THREE.Mesh(finGeometry, accent));
+  const finCap = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.26, 1.9), trim);
+  finCap.position.set(0, 3.42, 6.4);
+  group.add(finCap);
   const rudder = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.35, 1.05), paint);
   rudder.position.set(0, 1.7, 6.6);
   group.add(rudder);
+  for (const y of [1.35, 1.72]) {
+    const rudderBand = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.11, 1.08), accent);
+    rudderBand.position.set(0, y, 6.6);
+    group.add(rudderBand);
+  }
 
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.95, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2), glass);
   canopy.scale.set(0.96, 1.15, 2.1);
@@ -543,22 +603,31 @@ function buildBody() {
   propeller.position.z = -8.62;
   group.add(propeller);
   const propDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(2.45, 24),
-    new THREE.MeshBasicMaterial({ color: 0xd6f4ff, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+    new THREE.PlaneGeometry(4.7, 4.7),
+    new THREE.MeshBasicMaterial({ map: makePropTexture(), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   );
-  propDisc.position.z = -8.78;
+  propDisc.position.z = -8.86;
+  propDisc.rotation.z = 0.4;
   group.add(propDisc);
+  const propGlow = new THREE.Mesh(
+    new THREE.CircleGeometry(2.42, 24),
+    new THREE.MeshBasicMaterial({ color: 0xc5eaff, transparent: true, opacity: 0.09, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+  );
+  propGlow.position.z = -8.92;
+  group.add(propGlow);
 
-  const haloMaterialA = new THREE.MeshBasicMaterial({ color: 0xff5c68, transparent: true, opacity: 0.22, depthWrite: false, fog: false });
-  const haloMaterialB = new THREE.MeshBasicMaterial({ color: 0x6dffb0, transparent: true, opacity: 0.22, depthWrite: false, fog: false });
+  const haloMaterialA = new THREE.SpriteMaterial({ map: makeGlowTexture('#ff4d5e'), transparent: true, opacity: 0.42, depthWrite: false, fog: false });
+  const haloMaterialB = new THREE.SpriteMaterial({ map: makeGlowTexture('#65ffa8'), transparent: true, opacity: 0.42, depthWrite: false, fog: false });
   const leftLight = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff4d5e, fog: false }));
   leftLight.position.set(-8.18, -0.06, -0.72);
   const rightLight = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ color: 0x65ffa8, fog: false }));
   rightLight.position.set(8.18, -0.06, -0.72);
-  const leftHalo = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), haloMaterialA);
+  const leftHalo = new THREE.Sprite(haloMaterialA);
   leftHalo.position.copy(leftLight.position);
-  const rightHalo = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), haloMaterialB);
+  leftHalo.scale.set(2.4, 2.4, 1);
+  const rightHalo = new THREE.Sprite(haloMaterialB);
   rightHalo.position.copy(rightLight.position);
+  rightHalo.scale.set(2.4, 2.4, 1);
   const tailLight = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffe4a3, fog: false }));
   tailLight.position.set(0, 1.2, 7.2);
   group.add(leftLight, rightLight, leftHalo, rightHalo, tailLight);
@@ -578,7 +647,12 @@ function buildBody() {
     const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.5, 6), trim);
     brace.position.set(x * 0.72, -0.9, z + 0.45);
     brace.rotation.z = x === 0 ? 0 : -Math.sign(x) * 0.5;
-    gearGroup.add(wheel, hubWheel, strut, brace);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.06, 1.9), paint);
+    door.position.set(x * 1.08, -0.47, z + 0.2);
+    door.rotation.z = x === 0 ? 0 : -Math.sign(x) * 0.24;
+    const oleo = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.75, 6), dark);
+    oleo.position.set(x, -1.32, z);
+    gearGroup.add(wheel, hubWheel, strut, brace, door, oleo);
   }
   group.add(gearGroup);
 
@@ -619,36 +693,47 @@ function buildCockpit(mission) {
   const trim = new THREE.MeshStandardMaterial({ color: 0x42545c, roughness: 0.58, metalness: 0.45, flatShading: true, fog: false });
   const edge = new THREE.MeshBasicMaterial({ color: 0x7d9aa4, fog: false });
 
-  const backing = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.9, 0.18), shell);
-  backing.position.set(0, -0.52, -1.52);
-  backing.rotation.x = -0.12;
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.62, 0.16), shell);
+  backing.position.set(0, -0.7, -1.52);
+  backing.rotation.x = -0.16;
   group.add(backing);
 
   const instrumentMaterial = new THREE.MeshBasicMaterial({ map: panel.texture, fog: false, side: THREE.DoubleSide });
-  instrumentMaterial.color.multiplyScalar(2.85);
+  instrumentMaterial.color.multiplyScalar(2.15);
   const instruments = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.56, 0.78),
+    new THREE.PlaneGeometry(1.1, 0.55),
     instrumentMaterial,
   );
-  instruments.position.set(0, -0.5, -1.4);
-  instruments.rotation.x = -0.12;
+  instruments.position.set(0, -0.68, -1.42);
+  instruments.rotation.x = -0.16;
   group.add(instruments);
 
   const glass = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.54, 0.76),
-    new THREE.MeshBasicMaterial({ color: 0xaee6fa, transparent: true, opacity: 0.04, fog: false, depthWrite: false, side: THREE.DoubleSide }),
+    new THREE.PlaneGeometry(1.08, 0.54),
+    new THREE.MeshBasicMaterial({ color: 0xbaeaff, transparent: true, opacity: 0.05, fog: false, depthWrite: false, side: THREE.DoubleSide }),
   );
-  glass.position.set(0, -0.495, -1.385);
-  glass.rotation.x = -0.12;
+  glass.position.set(0, -0.675, -1.405);
+  glass.rotation.x = -0.16;
   group.add(glass);
 
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.08, 0.2), shell);
-  hood.position.set(0, -0.04, -1.26);
-  hood.rotation.x = -0.12;
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.19), shell);
+  hood.position.set(0, -0.37, -1.34);
+  hood.rotation.x = -0.16;
   group.add(hood);
-  const hoodLip = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.014, 0.025), edge);
-  hoodLip.position.set(0, 0.012, -1.15);
+  const hoodLip = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.018, 0.028), edge);
+  hoodLip.position.set(0, -0.31, -1.23);
   group.add(hoodLip);
+
+  const indicatorColors = [0x6de3ff, 0xffcf70, 0x8ce6a8, 0xff7d6b];
+  for (let i = 0; i < 4; i += 1) {
+    const lamp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture(`#${indicatorColors[i].toString(16).padStart(6, '0')}`),
+      transparent: true, opacity: 0.46, depthWrite: false, fog: false,
+    }));
+    lamp.position.set(-0.36 + i * 0.24, -0.305, -1.21);
+    lamp.scale.set(0.12, 0.12, 1);
+    group.add(lamp);
+  }
 
   for (const side of [-1, 1]) {
     const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.15, 0.07), shell);
@@ -672,6 +757,39 @@ function buildCockpit(mission) {
   const bowTrim = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.012, 0.02), trim);
   bowTrim.position.set(0, 0.59, -1.37);
   group.add(bowTrim);
+
+  const nosePaint = new THREE.MeshStandardMaterial({ color: 0xfff3dc, roughness: 0.38, metalness: 0.22, shininess: 62, flatShading: true, fog: false });
+  const noseAccent = new THREE.MeshStandardMaterial({ color: 0xe4693f, roughness: 0.42, metalness: 0.25, shininess: 58, flatShading: true, fog: false });
+  const cowling = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.42, 1.75, 10), nosePaint);
+  cowling.rotation.x = Math.PI / 2;
+  cowling.position.set(0, -1.02, -2.8);
+  group.add(cowling);
+  const cowlBand = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.24, 10), noseAccent);
+  cowlBand.rotation.x = Math.PI / 2;
+  cowlBand.position.set(0, -1.02, -3.48);
+  group.add(cowlBand);
+  const cowlSeam = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.022, 5, 12), trim);
+  cowlSeam.position.set(0, -1.02, -3.31);
+  group.add(cowlSeam);
+  for (const side of [-1, 1]) {
+    const support = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 1.4), trim);
+    support.position.set(side * 0.42, -0.7, -2.05);
+    support.rotation.x = 0.08;
+    group.add(support);
+    const noseStripe = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.03, 1.6), noseAccent);
+    noseStripe.position.set(side * 0.25, -0.83, -2.9);
+    group.add(noseStripe);
+  }
+  const spinnerCone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.62, 10), trim);
+  spinnerCone.rotation.x = -Math.PI / 2;
+  spinnerCone.position.set(0, -1.02, -3.82);
+  group.add(spinnerCone);
+  const propBlur = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.9, 1.9),
+    new THREE.MeshBasicMaterial({ map: makePropTexture(), transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+  );
+  propBlur.position.set(0, -1.02, -4.02);
+  group.add(propBlur);
 
   const yoke = new THREE.Group();
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.045, 0.045), trim);
@@ -702,7 +820,7 @@ function buildCockpit(mission) {
     integrity: 100, score: 0, elapsed: 0, wind: mission?.wind ?? 0,
   }, true);
 
-  return { group, panel, yoke, throttle };
+  return { group, panel, yoke, throttle, propBlur };
 }
 
 export function createAircraft(scene, camera, mission) {
@@ -1013,6 +1131,7 @@ export function createAircraft(scene, camera, mission) {
     shake = Math.max(0, shake - dt * 0.9);
     propAngle += dt * (3 + state.throttle * 34);
     body.propeller.rotation.z = propAngle;
+    body.propDisc.rotation.z = 0.4 + propAngle * 0.34;
     body.gearGroup.visible = state.gear;
     const flapAngle = state.flaps ? 0.46 : 0;
     body.flaps[0].rotation.x = flapAngle;
@@ -1052,7 +1171,7 @@ export function createAircraft(scene, camera, mission) {
       if (force) camera.position.copy(desiredCamera);
       else camera.position.lerp(desiredCamera, 1 - Math.exp(-5.5 * dt));
       if (shakeAmount > 0) camera.position.x += Math.sin(state.elapsed * 41) * shakeAmount;
-      camera.up.set(0, 1, 0).lerp(up, 0.32).normalize();
+      camera.up.set(0, 1, 0).lerp(up, 0.55).normalize();
       lookTarget.copy(state.pos).addScaledVector(forward, 8.5).addScaledVector(up, 1.1);
       camera.lookAt(lookTarget);
       camera.fov = 62 + clamp(state.vel.length() * 0.045, 0, 5);
@@ -1095,6 +1214,8 @@ export function createAircraft(scene, camera, mission) {
     }, force || dt === 0);
     cockpit.yoke.rotation.z = -state.roll * 0.5;
     cockpit.throttle.rotation.z = 0.55 - state.throttle * 1.1;
+    cockpit.propBlur.rotation.z = state.elapsed * (2.5 + state.throttle * 22);
+    cockpit.propBlur.material.opacity = 0.24 + state.throttle * 0.28;
   }
 
   return {
@@ -1109,7 +1230,8 @@ export function createAircraft(scene, camera, mission) {
       body.gearGroup.visible = state.gear;
       body.flaps[0].rotation.x = state.flaps ? 0.46 : 0;
       body.flaps[1].rotation.x = state.flaps ? 0.46 : 0;
-      body.propDisc.material.opacity = 0.07 + state.throttle * 0.11;
+      body.propDisc.material.opacity = 0.35 + state.throttle * 0.25;
+      body.propDisc.rotation.z = 0.4 + state.elapsed * 8;
       body.halos[0].material.opacity = 0.42;
       body.halos[1].material.opacity = 0.42;
       updateShadow(world);

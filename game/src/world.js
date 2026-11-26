@@ -1,37 +1,42 @@
 import * as THREE from './engine.js';
 import { RUNWAY_FAR, RUNWAY_HALF_WIDTH, RUNWAY_NEAR, RUNWAY_Y, SEED } from './config.js';
 import { clamp, createRandom, fbm, lerp, smoothstep } from './random.js';
+import {
+  makeBroadleafGeometry, makeCloudGeometry, makeConiferGeometry, makeGlowTexture,
+  makeMountainGeometry, makeRingGlowTexture, makeRockGeometry, makeRunwayTexture,
+  makeSurfaceTexture, makeWaterTexture,
+} from './worldAssets.js';
 
 const SKY_PRESETS = {
   dawn: {
-    top: 0x16365f,
-    bottom: 0xffb682,
-    sun: 0xffd7a6,
-    fog: 0xd7a98c,
-    sunDir: [-0.55, 0.22, -0.8],
-    hemiSky: 0xffd6b0,
-    hemiGround: 0x4a5d54,
-    sunPower: 2.3,
+    top: 0x18396a,
+    bottom: 0xffc186,
+    sun: 0xffd49a,
+    fog: 0xd9ad8f,
+    sunDir: [-0.72, 0.13, -0.69],
+    hemiSky: 0xffd9b4,
+    hemiGround: 0x4a5a54,
+    sunPower: 2.65,
   },
   day: {
-    top: 0x2c76b7,
-    bottom: 0xd6ecf5,
-    sun: 0xfff3d2,
-    fog: 0xbcd7e5,
-    sunDir: [-0.35, 0.68, -0.62],
+    top: 0x246aa8,
+    bottom: 0xd7ecf2,
+    sun: 0xfff0c4,
+    fog: 0xb6d3e2,
+    sunDir: [-0.42, 0.66, -0.62],
     hemiSky: 0xd9f0ff,
-    hemiGround: 0x5d6b55,
-    sunPower: 2.6,
+    hemiGround: 0x53644f,
+    sunPower: 2.8,
   },
   storm: {
-    top: 0x1d2b3c,
-    bottom: 0x6c7e8d,
-    sun: 0xbccbd5,
-    fog: 0x7f919e,
-    sunDir: [0.4, 0.32, -0.85],
-    hemiSky: 0x9fb5c4,
-    hemiGround: 0x3c4b4c,
-    sunPower: 1.25,
+    top: 0x142232,
+    bottom: 0x71828e,
+    sun: 0xc6d5dc,
+    fog: 0x798c99,
+    sunDir: [0.4, 0.27, -0.88],
+    hemiSky: 0xa2b7c5,
+    hemiGround: 0x36464a,
+    sunPower: 1.35,
   },
 };
 
@@ -70,30 +75,32 @@ function terrainColor(height, x, z, mission, random) {
   const warm = mission.id === 'canyon';
   const harbor = mission.id === 'harbor';
   const storm = mission.sky === 'storm';
-  if (height < 1.2) color.setHex(warm ? 0xd0a47a : harbor ? 0xb9ab88 : storm ? 0x8f9b91 : 0xe0d0a6);
-  else if (height < 5) color.setHex(warm ? 0xc48c5c : harbor ? 0x9d9a7b : 0xb8b083);
+  const moisture = fbm(x * 0.011, z * 0.011, 1207, 3);
+  if (height < 1.2) color.setHex(warm ? 0xd6ab7d : harbor ? 0xc8b894 : storm ? 0x8d9a92 : 0xe3d4aa);
+  else if (height < 5) color.setHex(warm ? 0xc8905e : harbor ? 0xa49d7d : 0xbab28a);
   else if (height < 20) {
     const t = clamp((height - 5) / 15, 0, 1);
-    color.setHex(warm ? 0x94492f : harbor ? 0x53675d : storm ? 0x3d5b4f : 0x4c8057)
-      .lerp(new THREE.Color(warm ? 0xc47643 : harbor ? 0x828b6c : storm ? 0x5b7461 : 0x78a562), t);
+    color.setHex(warm ? 0x8f432d : harbor ? 0x4d6259 : storm ? 0x39564c : 0x487653)
+      .lerp(new THREE.Color(warm ? 0xc87a45 : harbor ? 0x7e8a6b : storm ? 0x597263 : 0x7ca960), t);
   } else if (height < 58) {
     const t = clamp((height - 20) / 38, 0, 1);
-    color.setHex(warm ? 0xa85532 : harbor ? 0x596660 : storm ? 0x536363 : 0x687969)
-      .lerp(new THREE.Color(warm ? 0xe0a066 : harbor ? 0x969b87 : storm ? 0x7c8b87 : 0x9a9b84), t);
+    color.setHex(warm ? 0xa04c31 : harbor ? 0x586660 : storm ? 0x4f6062 : 0x647767)
+      .lerp(new THREE.Color(warm ? 0xe3a56b : harbor ? 0x9aa093 : storm ? 0x82908c : 0xa3a78d), t);
   } else {
-    color.setHex(warm ? 0xd9b08a : harbor ? 0x939e9b : 0xa9b5b2).lerp(new THREE.Color(0xeef3f0), clamp((height - 62) / 52, 0, 1));
+    color.setHex(warm ? 0xdbb68f : harbor ? 0x98a3a0 : 0xaab6b4).lerp(new THREE.Color(0xf1f5f2), clamp((height - 62) / 52, 0, 1));
   }
   if (warm && height > 6) {
-    const bands = Math.sin(height * 0.27 + x * 0.0022 + z * 0.0008);
-    const strata = 0.79 + (bands > 0.25 ? 0.24 : bands < -0.45 ? -0.13 : 0.05);
+    const bands = Math.sin(height * 0.31 + x * 0.0026 + z * 0.0009 + moisture * 2.4);
+    const strata = 0.78 + (bands > 0.32 ? 0.27 : bands < -0.48 ? -0.16 : 0.06);
     color.multiplyScalar(strata);
-    if (height < 26) color.lerp(new THREE.Color(0x4a2b22), 0.16);
+    if (height < 28) color.lerp(new THREE.Color(0x48291f), 0.18);
+    if (moisture > 0.62 && height < 36) color.lerp(new THREE.Color(0x6c4a32), 0.13);
   }
   if (harbor && height > 2 && height < 24) {
-    const quay = 0.96 + Math.abs(Math.sin(z * 0.05 + x * 0.02)) * 0.07;
-    color.multiplyScalar(quay);
+    color.lerp(new THREE.Color(0x6c7866), moisture * 0.16);
+    color.multiplyScalar(0.95 + Math.abs(Math.sin(z * 0.05 + x * 0.02)) * 0.09);
   }
-  const jitter = 0.94 + random() * 0.12;
+  const jitter = 0.965 + random() * 0.07;
   color.multiplyScalar(jitter);
   return color;
 }
@@ -125,13 +132,19 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       fragmentShader: `
         uniform vec3 topColor; uniform vec3 bottomColor; uniform vec3 sunColor; uniform vec3 sunDirection;
         varying vec3 vDir;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         void main(){
           vec3 dir = normalize(vDir);
-          float h = smoothstep(-0.18, 0.7, dir.y);
+          float h = smoothstep(-0.22, 0.72, dir.y);
           vec3 col = mix(bottomColor, topColor, h);
-          float sun = pow(max(0.0, dot(dir, normalize(sunDirection))), 140.0);
-          float glow = pow(max(0.0, dot(dir, normalize(sunDirection))), 8.0) * 0.18;
-          col += sunColor * (sun * 1.5 + glow);
+          float horizon = 1.0 - smoothstep(0.0, 0.26, abs(dir.y));
+          col = mix(col, bottomColor * 1.06, horizon * 0.24);
+          float alignment = max(0.0, dot(dir, normalize(sunDirection)));
+          float disc = pow(alignment, 480.0);
+          float halo = pow(alignment, 7.0) * 0.3 + pow(alignment, 34.0) * 0.34;
+          float flare = pow(alignment, 18.0) * (0.62 + 0.38 * sin(atan(dir.y, dir.x) * 9.0)) * 0.13;
+          col += sunColor * (disc * 2.1 + halo + flare);
+          col += (hash(dir.xy * 730.0) - 0.5) * 0.008;
           gl_FragColor = vec4(col, 1.0);
         }`,
     }),
@@ -139,6 +152,13 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   sky.position.set(0, 0, -350);
   sky.frustumCulled = false;
   root.add(sky);
+
+  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeGlowTexture(`#${preset.sun.toString(16).padStart(6, '0')}`, 256),
+    transparent: true, opacity: mission.sky === 'storm' ? 0.16 : 0.38, depthWrite: false, fog: false,
+  }));
+  sunGlow.scale.set(150, 150, 1);
+  root.add(sunGlow);
 
   const hemi = new THREE.HemisphereLight(preset.hemiSky, preset.hemiGround, 1.35);
   root.add(hemi);
@@ -166,7 +186,9 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     const large = fbm(x * 0.0031, z * 0.0031, seed, 4);
     const detail = fbm(x * 0.013, z * 0.013, seed + 31, 3);
     const ridge = fbm(x * 0.0022 + 8, z * 0.0022 - 3, seed + 73, 3);
-    let h = -2.5 + large * 22 + detail * 7;
+    const fine = fbm(x * 0.037, z * 0.037, seed + 509, 3);
+    const ridged = 1 - Math.abs(fbm(x * 0.008, z * 0.008, seed + 613, 3) * 2 - 1);
+    let h = -2.5 + large * 22 + detail * 7 + (fine - 0.5) * 3.8 + Math.pow(ridged, 3) * 8;
     const dist = Math.hypot(x * 0.92, (z + 330) * 0.78);
     h += smoothstep(250, 700, dist) * ridge * 54;
     h -= smoothstep(540, 880, dist) * 20;
@@ -177,6 +199,8 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       h = lerp(h, floor, (1 - smoothstep(62, 124, offset)) * 0.96);
       const terrace = 0.82 + Math.floor((h - 8) / 11) * 0.035;
       h += smoothstep(74, 152, offset) * (1 - smoothstep(280, 390, offset)) * (34 + ridge * 64) * terrace;
+      const bench = Math.floor(h / 7) * 7;
+      h = lerp(h, bench + smoothstep(0.42, 0.95, (h - bench) / 7) * 2.2, 0.26 * smoothstep(80, 180, offset));
     } else {
       const shoreline = shorelineX(z);
       const sea = smoothstep(shoreline - 34, shoreline + 24, x);
@@ -195,9 +219,11 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   }
 
   const size = 1500;
-  const segments = 132;
-  const positions = new Float32Array((segments + 1) * (segments + 1) * 3);
+  const segments = 160;
+  const vertexCount = (segments + 1) * (segments + 1);
+  const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(positions.length);
+  const uvs = new Float32Array(vertexCount * 2);
   const indices = [];
   let vi = 0;
   for (let j = 0; j <= segments; j += 1) {
@@ -212,6 +238,8 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       colors[vi] = c.r;
       colors[vi + 1] = c.g;
       colors[vi + 2] = c.b;
+      uvs[(vi / 3) * 2] = i / segments;
+      uvs[(vi / 3) * 2 + 1] = j / segments;
       vi += 3;
     }
   }
@@ -227,11 +255,15 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const terrainGeometry = new THREE.BufferGeometry();
   terrainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   terrainGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  terrainGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   terrainGeometry.setIndex(indices);
   terrainGeometry.computeVertexNormals();
   const terrain = new THREE.Mesh(
     terrainGeometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.96, metalness: 0 }),
+    new THREE.MeshStandardMaterial({
+      vertexColors: true, map: makeSurfaceTexture(), detail: 0.3, groundShade: 1,
+      flatShading: true, roughness: 0.96, metalness: 0,
+    }),
   );
   root.add(terrain);
 
@@ -245,8 +277,10 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     waterGeometry,
     new THREE.MeshPhongMaterial({
       color: mission.sky === 'storm' ? 0x2e596b : mission.id === 'harbor' ? 0x2f7ea3 : 0x2b7e9c,
-      specular: 0xd9f6ff,
-      shininess: 96,
+      specular: 0xffedcf,
+      shininess: 128,
+      map: makeWaterTexture(),
+      detail: 0.16,
       vertexColors: true,
       transparent: true,
       opacity: 0.95,
@@ -677,6 +711,16 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       glint.position.set(x, 0.62, z);
       root.add(glint);
     }
+    const reflectionMaterial = new THREE.MeshBasicMaterial({
+      map: makeGlowTexture('#ffd99c', 256), transparent: true, opacity: 0.24,
+      depthWrite: false, side: THREE.DoubleSide, fog: false,
+    });
+    for (const [z, width, length] of [[-430, 34, 210], [-640, 24, 150]]) {
+      const reflection = new THREE.Mesh(new THREE.PlaneGeometry(width, length), reflectionMaterial);
+      reflection.rotation.x = -Math.PI / 2;
+      reflection.position.set(shorelineX(z) + 92, 0.66, z);
+      root.add(reflection);
+    }
 
     const channelLight = new THREE.MeshBasicMaterial({ color: 0xffd383 });
     for (let z = -172; z > -310; z -= 16) {
@@ -725,44 +769,45 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     if (ledges.instanceColor) ledges.instanceColor.needsUpdate = true;
     root.add(ledges);
 
+    const rockGeometry = makeRockGeometry();
     const spires = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(1, 1, 6),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }),
-      52,
+      rockGeometry,
+      new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, flatShading: true, detail: 0.3 }),
+      74,
     );
-    for (let i = 0; i < 52; i += 1) {
-      const z = -210 - (i / 52) * 690 + random.range(-18, 18);
+    for (let i = 0; i < 74; i += 1) {
+      const z = -210 - (i / 74) * 690 + random.range(-18, 18);
       const side = i % 2 === 0 ? -1 : 1;
-      const x = guideX(z) + side * random.range(68, 148);
-      const height = random.range(23, 68);
+      const x = guideX(z) + side * random.range(68, 168);
+      const height = random.range(20, 74);
       const h = heightAt(x, z);
-      dummy.position.set(x, h + height * 0.48, z);
-      dummy.scale.set(random.range(3.5, 9), height, random.range(3.5, 9));
+      dummy.position.set(x, h + height * 0.42, z);
+      dummy.scale.set(random.range(4.5, 12), height * 0.55, random.range(4.5, 12));
       dummy.quaternion.setFromEuler(new THREE.Euler(random.range(-0.09, 0.09), random.range(0, Math.PI), random.range(-0.09, 0.09)));
       dummy.updateMatrix();
       spires.setMatrixAt(i, dummy.matrix);
-      spires.setColorAt(i, new THREE.Color(i % 3 === 0 ? 0x6a3526 : 0xc1784c).multiplyScalar(0.82 + random() * 0.24));
+      spires.setColorAt(i, new THREE.Color(i % 3 === 0 ? 0x79402c : 0xcf8857).multiplyScalar(0.82 + random() * 0.25));
     }
     spires.instanceMatrix.needsUpdate = true;
     if (spires.instanceColor) spires.instanceColor.needsUpdate = true;
     root.add(spires);
 
     const shrubs = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(1, 0),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }),
-      150,
+      makeRockGeometry(),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, flatShading: true }),
+      190,
     );
-    for (let i = 0; i < 150; i += 1) {
-      const z = -180 - (i / 150) * 740 + random.range(-22, 22);
+    for (let i = 0; i < 190; i += 1) {
+      const z = -180 - (i / 190) * 740 + random.range(-22, 22);
       const side = i % 2 === 0 ? -1 : 1;
-      const x = guideX(z) + side * random.range(30, 68);
+      const x = guideX(z) + side * random.range(28, 74);
       const h = heightAt(x, z);
-      dummy.position.set(x, h + 0.7, z);
-      dummy.scale.set(random.range(1.3, 3.6), random.range(0.8, 2.4), random.range(1.3, 3.6));
+      dummy.position.set(x, h + 0.4, z);
+      dummy.scale.set(random.range(1.6, 4.4), random.range(0.7, 2.1), random.range(1.6, 4.4));
       dummy.quaternion.setFromEuler(new THREE.Euler(0, random.range(0, Math.PI), 0));
       dummy.updateMatrix();
       shrubs.setMatrixAt(i, dummy.matrix);
-      shrubs.setColorAt(i, new THREE.Color(i % 4 === 0 ? 0xb58a4d : 0x4b6b41).multiplyScalar(0.8 + random() * 0.35));
+      shrubs.setColorAt(i, new THREE.Color(i % 4 === 0 ? 0xc9985a : i % 3 === 0 ? 0x8e8b56 : 0x537342).multiplyScalar(0.82 + random() * 0.3));
     }
     shrubs.instanceMatrix.needsUpdate = true;
     if (shrubs.instanceColor) shrubs.instanceColor.needsUpdate = true;
@@ -791,9 +836,10 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   }
 
   const treeCount = 900;
+  const treeGeometry = mission.id === 'harbor' ? makeBroadleafGeometry() : makeConiferGeometry();
   const foliage = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(2.6, 8, 5),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true }),
+    treeGeometry,
+    new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, flatShading: true, detail: 0.16 }),
     treeCount,
   );
   const trunks = new THREE.InstancedMesh(
@@ -821,12 +867,13 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     dummy.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
     dummy.updateMatrix();
     treeShadows.setMatrixAt(treeIndex, dummy.matrix);
-    dummy.position.set(x, h + 4.1 * scale, z);
-    dummy.scale.setScalar(scale);
+    dummy.position.set(x, h + 0.1 * scale, z);
+    dummy.scale.setScalar(scale * 1.18);
     dummy.quaternion.setFromEuler(new THREE.Euler(0, random.range(0, Math.PI * 2), 0));
     dummy.updateMatrix();
     foliage.setMatrixAt(treeIndex, dummy.matrix);
-    foliage.setColorAt(treeIndex, new THREE.Color(mission.sky === 'day' ? 0x3d6f4b : 0x365e4b).multiplyScalar(0.8 + random() * 0.4));
+    const foliageColor = mission.id === 'harbor' ? 0x7c9b5c : mission.sky === 'day' ? 0x4d8353 : 0x3e6a55;
+    foliage.setColorAt(treeIndex, new THREE.Color(foliageColor).multiplyScalar(0.82 + random() * 0.36));
     dummy.position.y = h + 1.15 * scale;
     dummy.updateMatrix();
     trunks.setMatrixAt(treeIndex, dummy.matrix);
@@ -843,8 +890,8 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
 
   const peakCount = 34;
   const peaks = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(1, 1, 5),
-    new THREE.MeshStandardMaterial({ color: 0x8797a0, roughness: 1, flatShading: true }),
+    makeMountainGeometry(),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, flatShading: true, detail: 0.12 }),
     peakCount,
   );
   for (let i = 0; i < peakCount; i += 1) {
@@ -868,7 +915,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const runwayCenter = (RUNWAY_NEAR + RUNWAY_FAR) / 2;
   const asphalt = new THREE.Mesh(
     new THREE.BoxGeometry(RUNWAY_HALF_WIDTH * 2, 0.6, runwayLength),
-    new THREE.MeshStandardMaterial({ color: 0x303740, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x8d99a2, map: makeRunwayTexture(), detail: 0.14, roughness: 0.94, metalness: 0.02 }),
   );
   asphalt.position.set(0, RUNWAY_Y + 0.15, runwayCenter);
   root.add(asphalt);
@@ -917,6 +964,33 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   farNumber.position.set(0, RUNWAY_Y + 0.53, RUNWAY_FAR + 38);
   root.add(farNumber);
 
+  const rubberMaterial = new THREE.MeshBasicMaterial({ color: 0x161d22, transparent: true, opacity: 0.3, depthWrite: false });
+  for (const side of [-1, 1]) {
+    for (const z of [RUNWAY_NEAR - 58, RUNWAY_FAR + 58]) {
+      const skid = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 34), rubberMaterial);
+      skid.rotation.x = -Math.PI / 2;
+      skid.position.set(side * 3.4, RUNWAY_Y + 0.485, z);
+      root.add(skid);
+    }
+  }
+  const aimingMaterial = new THREE.MeshBasicMaterial({ color: 0xf0f6f3, transparent: true, opacity: 0.86 });
+  for (const z of [RUNWAY_NEAR - 76, RUNWAY_FAR + 76]) {
+    for (const side of [-1, 1]) {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 15), aimingMaterial);
+      bar.rotation.x = -Math.PI / 2;
+      bar.position.set(side * 6.2, RUNWAY_Y + 0.486, z);
+      root.add(bar);
+    }
+  }
+  for (const z of [RUNWAY_NEAR - 5, RUNWAY_FAR + 5]) {
+    for (let i = -5; i <= 5; i += 1) {
+      const key = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 13), markingMaterial);
+      key.rotation.x = -Math.PI / 2;
+      key.position.set(i * 3.4, RUNWAY_Y + 0.487, z);
+      root.add(key);
+    }
+  }
+
   const apron = new THREE.Mesh(
     new THREE.BoxGeometry(64, 0.4, 106),
     new THREE.MeshStandardMaterial({ color: 0x404b50, roughness: 0.96 }),
@@ -939,11 +1013,17 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const lightGeometry = new THREE.SphereGeometry(0.55, 6, 5);
   const lightMaterialA = new THREE.MeshBasicMaterial({ color: 0x7ef0ff });
   const lightMaterialB = new THREE.MeshBasicMaterial({ color: 0xffb15c });
+  const edgeGlowA = new THREE.SpriteMaterial({ map: makeGlowTexture('#7ef0ff'), transparent: true, opacity: 0.46, depthWrite: false, fog: false });
+  const edgeGlowB = new THREE.SpriteMaterial({ map: makeGlowTexture('#ffb15c'), transparent: true, opacity: 0.42, depthWrite: false, fog: false });
   for (let z = RUNWAY_FAR; z <= RUNWAY_NEAR; z += 18) {
     for (const side of [-1, 1]) {
       const light = new THREE.Mesh(lightGeometry, z % 36 === 0 ? lightMaterialA : lightMaterialB);
       light.position.set(side * (RUNWAY_HALF_WIDTH + 1.6), RUNWAY_Y + 0.6, z);
       root.add(light);
+      const glow = new THREE.Sprite(z % 36 === 0 ? edgeGlowA : edgeGlowB);
+      glow.position.set(light.position.x, RUNWAY_Y + 0.7, z);
+      glow.scale.set(3.2, 3.2, 1);
+      root.add(glow);
     }
   }
   const approachPositions = [];
@@ -1006,28 +1086,35 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
 
   const storm = mission.sky === 'storm';
   const cloudMaterials = storm
-    ? [0x566774, 0x6d7d88, 0x83919a].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true, transparent: true, opacity: 0.88 }))
-    : [0xeaf2f2, 0xffffff, 0xd8e7ea].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true, transparent: true, opacity: 0.78 }));
-  const cloudGeometry = new THREE.IcosahedronGeometry(1, 0);
+    ? [0x6b7a86, 0x87959e, 0xa5b1b8].map((color) => new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 1, flatShading: true, transparent: true, opacity: 0.86 }))
+    : [0xf3ede2, 0xffffff, 0xd7e4e8].map((color) => new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 1, flatShading: true, transparent: true, opacity: 0.74 }));
+  const cloudGeometry = makeCloudGeometry();
   const clouds = [];
   for (let i = 0; i < 26; i += 1) {
-    const group = new THREE.Group();
+    const cloud = new THREE.Mesh(cloudGeometry, cloudMaterials[i % cloudMaterials.length]);
     const baseX = random.range(-620, 620);
     const baseZ = random.range(-980, 220);
     const baseY = storm ? random.range(64, 105) : random.range(110, 190);
-    const puffs = storm ? 7 : 5;
-    for (let p = 0; p < puffs; p += 1) {
-      const puff = new THREE.Mesh(cloudGeometry, cloudMaterials[p % cloudMaterials.length]);
-      puff.position.set(random.range(-20, 20), random.range(-5, 6), random.range(-14, 14));
-      const s = random.range(11, storm ? 26 : 23);
-      puff.scale.set(s * 1.6, s * 0.5, s);
-      group.add(puff);
+    const s = random.range(14, storm ? 28 : 25);
+    cloud.scale.set(s * 1.45, s * 0.68, s);
+    cloud.position.set(baseX, baseY, baseZ);
+    cloud.userData.speed = random.range(1.2, 3.4);
+    cloud.userData.baseY = baseY;
+    clouds.push(cloud);
+    root.add(cloud);
+  }
+
+  const hazeMaterial = new THREE.MeshBasicMaterial({
+    color: preset.fog, transparent: true, opacity: 0.032,
+    depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  for (const [y, spread, shift] of [[16, 190, 0], [31, 260, 70], [52, 320, -60]]) {
+    for (const side of [-1, 1]) {
+      const points = [];
+      for (let z = -940; z <= 180; z += 40) points.push([guideX(z) + side * (spread * 0.42 + shift), z]);
+      const haze = flatRibbon(points, spread, y, hazeMaterial);
+      haze.renderOrder = 1;
     }
-    group.position.set(baseX, baseY, baseZ);
-    group.userData.speed = random.range(1.2, 3.4);
-    group.userData.baseY = baseY;
-    clouds.push(group);
-    root.add(group);
   }
 
   const ringGroups = [];
@@ -1056,6 +1143,12 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.28, depthWrite: false, fog: false }),
     );
     group.add(halo);
+    const ringGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeRingGlowTexture(`#${ringColor.toString(16).padStart(6, '0')}`),
+      transparent: true, opacity: 0.42, depthWrite: false, fog: false,
+    }));
+    ringGlow.scale.set(radius * 1.9, radius * 1.9, 1);
+    group.add(ringGlow);
     const veil = new THREE.Mesh(
       new THREE.CircleGeometry(radius - 2.2, 32),
       new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.055, side: THREE.DoubleSide, depthWrite: false }),
@@ -1072,8 +1165,8 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     const label = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: makeLabelTexture(String(i + 1).padStart(2, '0'), '#6de3ff'), transparent: true, depthWrite: false }),
     );
-    label.position.set(0, radius + 8, 0);
-    label.scale.set(13, 6.5, 1);
+    label.position.set(0, radius + 6.5, 0);
+    label.scale.set(9.5, 4.75, 1);
     group.add(label);
     root.add(group);
     ringGroups.push({
@@ -1084,6 +1177,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
       torus,
       inner,
       halo,
+      ringGlow,
       veil,
       label,
       passed: false,
@@ -1148,6 +1242,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
         ring.torus.material.emissiveIntensity = ring.passed ? 0.12 : isNext ? 1.55 + Math.sin(time * 4) * 0.25 : 0.55;
         ring.inner.material.opacity = ring.passed ? 0.12 : isNext ? 1 : 0.38;
         ring.halo.material.opacity = ring.passed ? 0.05 : isNext ? 0.34 + Math.sin(time * 3) * 0.08 : 0.14;
+        ring.ringGlow.material.opacity = ring.passed ? 0.06 : isNext ? 0.38 + Math.sin(time * 3) * 0.07 : 0.16;
         ring.veil.material.opacity = ring.passed ? 0.012 : isNext ? 0.085 : 0.035;
         ring.label.material.opacity = ring.passed ? 0.28 : isNext ? 1 : 0.6;
         for (const child of ring.group.children) {
@@ -1159,6 +1254,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
         }
       }
       sky.position.set(cameraPos.x, cameraPos.y, cameraPos.z - 350);
+      sunGlow.position.copy(cameraPos).addScaledVector(skyUniforms.sunDirection.value, 820);
     },
     setPassed(index, value) {
       const ring = ringGroups[index];

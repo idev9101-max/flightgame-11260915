@@ -51,11 +51,11 @@ export function stageShot(name, context) {
   if (name === 'chase') {
     setFlight(state, {
       x: 20,
-      y: 47,
-      z: -272,
-      heading: 0.31,
-      pitch: 0.09,
-      roll: -0.48,
+      y: 75,
+      z: -370,
+      heading: 0.05,
+      pitch: 0.07,
+      roll: -0.30,
       speed: 72,
       climb: 2.2,
       throttle: 0.88,
@@ -72,12 +72,12 @@ export function stageShot(name, context) {
 
   if (name === 'harbor') {
     setFlight(state, {
-      x: 188,
-      y: 42,
-      z: -540,
-      heading: 3.44,
-      pitch: 0.025,
-      roll: 0.18,
+      x: 250,
+      y: 40,
+      z: -95,
+      heading: -0.72,
+      pitch: -0.01,
+      roll: 0.16,
       speed: 66,
       climb: 1.4,
       throttle: 0.81,
