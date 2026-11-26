@@ -251,6 +251,7 @@ export function createUI(onAction) {
   }
 
   function updateHUD(data) {
+    hud.classList.toggle('cockpit-view', data.cameraMode === 'cockpit');
     document.getElementById('hudMission').textContent = data.mission.name;
     document.getElementById('hudObjective').textContent = data.ringIndex >= data.rings.length
       ? 'ALL GATES · LAND ON 09'

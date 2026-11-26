@@ -50,12 +50,12 @@ export function stageShot(name, context) {
 
   if (name === 'chase') {
     setFlight(state, {
-      x: 22,
-      y: 49,
-      z: -278,
-      heading: 0.34,
-      pitch: 0.075,
-      roll: -0.34,
+      x: 20,
+      y: 47,
+      z: -272,
+      heading: 0.31,
+      pitch: 0.09,
+      roll: -0.48,
       speed: 72,
       climb: 2.2,
       throttle: 0.88,
@@ -72,23 +72,22 @@ export function stageShot(name, context) {
 
   if (name === 'harbor') {
     setFlight(state, {
-      x: 355,
-      y: 38,
-      z: -480,
-      heading: -1.45,
-      pitch: 0.02,
-      roll: -0.12,
-      speed: 67,
-      climb: 1.6,
+      x: 188,
+      y: 42,
+      z: -540,
+      heading: 3.44,
+      pitch: 0.025,
+      roll: 0.18,
+      speed: 66,
+      climb: 1.4,
       throttle: 0.81,
-      ringIndex: 2,
-      score: 2600,
+      ringIndex: 4,
+      score: 3800,
       timeLeft: mission.time - 24,
-      message: 'HARBOR CIRCUIT · GATE 03 AHEAD',
+      message: 'HARBOR CIRCUIT · FINAL GATE AHEAD',
       messageTime: 3,
     });
-    world.setPassed(0, true);
-    world.setPassed(1, true);
+    for (let i = 0; i < 4; i += 1) world.setPassed(i, true);
     return { screen: 'play', camera: 'chase', time: 14.5, missionIndex: selectedMission };
   }
 
