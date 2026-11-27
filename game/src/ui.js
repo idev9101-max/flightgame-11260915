@@ -1,7 +1,7 @@
-import { MISSIONS } from './config.js';
-import { createHUD } from './hud.js';
-
-const CONTROL_GUIDE = `
+import{MISSIONS}from'./config.js';
+import{createHUD}from'./hud.js';
+import{fuelBurnRate}from'./fuelSystem.js';
+const CONTROL_GUIDE=`
   <div class="control-grid">
     <div><b>Pitch / climb</b><span><span class="kbd">W</span><span class="kbd">↑</span> up · <span class="kbd">S</span><span class="kbd">↓</span> down</span></div>
     <div><b>Roll / bank</b><span><span class="kbd">A</span><span class="kbd">←</span> left · <span class="kbd">D</span><span class="kbd">→</span> right</span></div>
@@ -14,59 +14,51 @@ const CONTROL_GUIDE = `
     <div><b>Restart / help</b><span><span class="kbd">R</span> restart · <span class="kbd">H</span> guide</span></div>
     <div><b>Missions / mute</b><span><span class="kbd">M</span> select · <span class="kbd">N</span> sound</span></div>
   </div>`;
-
-function fmtTime(seconds) {
-  const total = Math.max(0, Math.ceil(seconds));
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+function fmtTime(seconds){
+const total=Math.max(0,Math.ceil(seconds));
+return`${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
-
-function padScore(value) {
-  return String(Math.max(0, Math.round(value))).padStart(6, '0');
+function padScore(value){
+return String(Math.max(0,Math.round(value))).padStart(6,'0');
 }
-
-export function createUI(onAction) {
-  const overlay = document.getElementById('overlay');
-  const notice = document.getElementById('notice');
-  const status = document.getElementById('status');
-  const hudView = createHUD();
-  let noticeTimer = 0;
-  let lastScreen = 'title';
-
-  overlay.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-action]');
-    if (!target) return;
-    const action = target.dataset.action;
-    const value = Number(target.dataset.value ?? 0);
-    onAction(action, value);
-  });
-
-  function setHudVisible(visible) {
-    hudView.setVisible(visible);
-  }
-
-  function setOverlay(html, visible = true) {
-    overlay.innerHTML = html;
-    overlay.classList.toggle('hidden', !visible);
-  }
-
-  function missionCards(selected) {
-    return MISSIONS.map((mission, index) => `
+export function createUI(onAction){
+const overlay=document.getElementById('overlay');
+const notice=document.getElementById('notice');
+const status=document.getElementById('status');
+const hudView=createHUD();
+let noticeTimer=0;
+let lastScreen='title';
+overlay.addEventListener('click',(event)=>{
+const target=event.target.closest('[data-action]');
+if(!target)return;
+const action=target.dataset.action;
+const value=Number(target.dataset.value??0);
+onAction(action,value);
+});
+function setHudVisible(visible){
+hudView.setVisible(visible);
+}
+function setOverlay(html,visible=true){
+overlay.innerHTML=html;
+overlay.classList.toggle('hidden',!visible);
+}
+function missionCards(selected){
+return MISSIONS.map((mission,index)=>`
       <div class="mission-card-ui ${index === selected ? 'selected' : ''}" data-action="select" data-value="${index}" role="button" tabindex="0">
         <div class="mission-index">0${index + 1} / FLIGHT PLAN</div>
         <div class="mission-name">${mission.name}</div>
         <div class="mission-sub">${mission.subtitle}</div>
         <div class="mission-meta">
           GATES <b>${mission.rings.length}</b> · LIMIT <b>${fmtTime(mission.time)}</b><br>
-          FUEL <b>${mission.fuelCapacity} L</b> · WIND <b>${mission.wind.toFixed(1)}</b><br>
+          FUEL <b>${mission.fuelCapacity} L</b> · END <b>${fmtTime(mission.fuelCapacity / fuelBurnRate(0.8))}</b><br>
           BONUS <b>×${mission.multiplier.toFixed(1)}</b>
         </div>
       </div>`).join('');
-  }
-
-  function showTitle(best) {
-    lastScreen = 'title';
-    setHudVisible(false);
-    setOverlay(`
+}
+function showTitle(best){
+lastScreen='title';
+setHudVisible(false);
+setOverlay(`
       <div class="panel">
         <div class="title-line">
           <div class="title-mark">SR</div>
@@ -85,13 +77,12 @@ export function createUI(onAction) {
         </div>
         <div class="prompt">PRESS ENTER TO CONTINUE · BEST ${padScore(best)}</div>
       </div>`);
-  }
-
-  function showBriefing(selected, best) {
-    lastScreen = 'briefing';
-    setHudVisible(false);
-    const mission = MISSIONS[selected];
-    setOverlay(`
+}
+function showBriefing(selected,best){
+lastScreen='briefing';
+setHudVisible(false);
+const mission=MISSIONS[selected];
+setOverlay(`
       <div class="panel">
         <div class="label">OPERATIONS / FLIGHT BRIEFING</div>
         <h1>Choose your flight plan</h1>
@@ -106,18 +97,16 @@ export function createUI(onAction) {
         </div>
         <div class="prompt">ENTER LAUNCHES · ← → SELECT · BEST ${padScore(best)}</div>
       </div>`);
-  }
-
-  function showPlay() {
-    lastScreen = 'play';
-    setOverlay('', false);
-    setHudVisible(true);
-  }
-
-  function showPause(data) {
-    lastScreen = 'pause';
-    setHudVisible(true);
-    setOverlay(`
+}
+function showPlay(){
+lastScreen='play';
+setOverlay('',false);
+setHudVisible(true);
+}
+function showPause(data){
+lastScreen='pause';
+setHudVisible(true);
+setOverlay(`
       <div class="panel compact">
         <div class="label">SIMULATION HOLD</div>
         <h1>Paused</h1>
@@ -135,12 +124,11 @@ export function createUI(onAction) {
         </div>
         <div class="prompt">P OR ESC TO RESUME</div>
       </div>`);
-  }
-
-  function showHelp(from, data) {
-    lastScreen = 'help';
-    setHudVisible(true);
-    setOverlay(`
+}
+function showHelp(from,data){
+lastScreen='help';
+setHudVisible(true);
+setOverlay(`
       <div class="panel narrow">
         <div class="label">PILOT'S NOTES</div>
         <h1>Control guide</h1>
@@ -154,13 +142,12 @@ export function createUI(onAction) {
         </div>
         <div class="prompt">H TO CLOSE · QUALITY ${data.quality.toUpperCase()}</div>
       </div>`);
-  }
-
-  function showResult(data) {
-    lastScreen = data.success ? 'success' : 'fail';
-    setHudVisible(true);
-    const rank = data.score > 12000 ? 'S' : data.score > 8500 ? 'A' : data.score > 5000 ? 'B' : 'C';
-    setOverlay(`
+}
+function showResult(data){
+lastScreen=data.success?'success':'fail';
+setHudVisible(true);
+const rank=data.score>12000?'S':data.score>8500?'A':data.score>5000?'B':'C';
+setOverlay(`
       <div class="panel compact">
         <div class="label">${data.mission.name} / DEBRIEF</div>
         <h1 class="result-title ${data.success ? 'good' : 'bad'}">${data.success ? 'Mission complete' : 'Mission failed'}</h1>
@@ -172,7 +159,9 @@ export function createUI(onAction) {
           <div class="stat"><span class="label">TIME USED</span><span class="num">${fmtTime(data.elapsed)}</span></div>
           <div class="stat"><span class="label">AIRFRAME</span><span class="num ${data.integrity < 40 ? 'bad' : ''}">${Math.round(data.integrity)}%</span></div>
           <div class="stat"><span class="label">FUEL LEFT</span><span class="num ${data.fuel.reserveWarning ? 'bad' : 'good'}">${Math.round(data.fuel.liters)} / ${Math.round(data.fuel.capacity)} L</span></div>
-          <div class="stat"><span class="label">RESERVE BONUS</span><span class="num warn">+${data.bonus.economyBonus}</span></div>
+          <div class="stat"><span class="label">TIME BONUS</span><span class="num warn">+${data.bonus.timeBonus ?? 0}</span></div>
+          <div class="stat"><span class="label">AIRFRAME BONUS</span><span class="num warn">+${data.bonus.airframeBonus ?? 0}</span></div>
+          <div class="stat"><span class="label">ECONOMY · FUEL OVER ${Math.round(data.bonus.fuelReserve ?? data.fuel.reserve)} L RESERVE</span><span class="num warn">+${data.bonus.economyBonus}</span></div>
           <div class="stat"><span class="label">BEST</span><span class="num warn">${padScore(data.best)}</span></div>
         </div>
         <div class="button-row">
@@ -182,31 +171,30 @@ export function createUI(onAction) {
         </div>
         <div class="prompt">R RESTARTS · M MISSION SELECT</div>
       </div>`);
-  }
-
-  return {
-    showTitle,
-    showBriefing,
-    showPlay,
-    showPause,
-    showHelp,
-    showResult,
-    updateHUD: hudView.update,
-    get screen() {
-      return lastScreen;
-    },
-    flash(text, tone = '') {
-      notice.textContent = text;
-      notice.className = `notice show ${tone}`;
-      clearTimeout(noticeTimer);
-      noticeTimer = setTimeout(() => { notice.className = 'notice'; }, 1800);
-    },
-    announce(text) {
-      status.textContent = text;
-    },
-    clearNotice() {
-      clearTimeout(noticeTimer);
-      notice.className = 'notice';
-    },
-  };
+}
+return{
+showTitle,
+showBriefing,
+showPlay,
+showPause,
+showHelp,
+showResult,
+updateHUD:hudView.update,
+get screen(){
+return lastScreen;
+},
+flash(text,tone=''){
+notice.textContent=text;
+notice.className=`notice show ${tone}`;
+clearTimeout(noticeTimer);
+noticeTimer=setTimeout(()=>{notice.className='notice';},1800);
+},
+announce(text){
+status.textContent=text;
+},
+clearNotice(){
+clearTimeout(noticeTimer);
+notice.className='notice';
+},
+};
 }
