@@ -1,4 +1,5 @@
 import { MISSIONS } from './config.js';
+import { createHUD } from './hud.js';
 
 const CONTROL_GUIDE = `
   <div class="control-grid">
@@ -25,11 +26,9 @@ function padScore(value) {
 
 export function createUI(onAction) {
   const overlay = document.getElementById('overlay');
-  const hud = document.getElementById('hud');
   const notice = document.getElementById('notice');
   const status = document.getElementById('status');
-  const minimap = document.getElementById('minimap');
-  const mapCtx = minimap.getContext('2d');
+  const hudView = createHUD();
   let noticeTimer = 0;
   let lastScreen = 'title';
 
@@ -42,7 +41,7 @@ export function createUI(onAction) {
   });
 
   function setHudVisible(visible) {
-    hud.classList.toggle('hidden', !visible);
+    hudView.setVisible(visible);
   }
 
   function setOverlay(html, visible = true) {
@@ -58,7 +57,8 @@ export function createUI(onAction) {
         <div class="mission-sub">${mission.subtitle}</div>
         <div class="mission-meta">
           GATES <b>${mission.rings.length}</b> · LIMIT <b>${fmtTime(mission.time)}</b><br>
-          WIND <b>${mission.wind.toFixed(1)}</b> · BONUS <b>×${mission.multiplier.toFixed(1)}</b>
+          FUEL <b>${mission.fuelCapacity} L</b> · WIND <b>${mission.wind.toFixed(1)}</b><br>
+          BONUS <b>×${mission.multiplier.toFixed(1)}</b>
         </div>
       </div>`).join('');
   }
@@ -75,7 +75,7 @@ export function createUI(onAction) {
             <div class="brand-sub">Low-poly flight arcade · Edition 01</div>
           </div>
         </div>
-        <p class="lede">Runway 09 is yours. Rotate a hand-built prop plane over a procedural coast, thread the luminous gates, and bring it home in one piece. Three flight plans. No downloads, no fuel gauge, no excuses.</p>
+        <p class="lede">Runway 09 is yours. Rotate a hand-built prop plane over a procedural coast, thread the luminous gates, and bring it home in one piece. Three flight plans, real fuel burn, no downloads.</p>
         <div class="divider"></div>
         ${CONTROL_GUIDE}
         <div class="button-row">
@@ -171,6 +171,8 @@ export function createUI(onAction) {
           <div class="stat"><span class="label">GATES</span><span class="num">${data.ringIndex} / ${data.rings.length}</span></div>
           <div class="stat"><span class="label">TIME USED</span><span class="num">${fmtTime(data.elapsed)}</span></div>
           <div class="stat"><span class="label">AIRFRAME</span><span class="num ${data.integrity < 40 ? 'bad' : ''}">${Math.round(data.integrity)}%</span></div>
+          <div class="stat"><span class="label">FUEL LEFT</span><span class="num ${data.fuel.reserveWarning ? 'bad' : 'good'}">${Math.round(data.fuel.liters)} / ${Math.round(data.fuel.capacity)} L</span></div>
+          <div class="stat"><span class="label">RESERVE BONUS</span><span class="num warn">+${data.bonus.economyBonus}</span></div>
           <div class="stat"><span class="label">BEST</span><span class="num warn">${padScore(data.best)}</span></div>
         </div>
         <div class="button-row">
@@ -182,112 +184,6 @@ export function createUI(onAction) {
       </div>`);
   }
 
-  function drawMinimap(data) {
-    const w = minimap.width;
-    const h = minimap.height;
-    mapCtx.clearRect(0, 0, w, h);
-    mapCtx.fillStyle = 'rgba(4,18,27,0.88)';
-    mapCtx.fillRect(0, 0, w, h);
-    const project = (x, z) => [w / 2 + (x / 330) * (w / 2 - 12), 12 + ((100 - z) / 920) * (h - 24)];
-    mapCtx.strokeStyle = 'rgba(120,180,205,0.16)';
-    mapCtx.lineWidth = 1;
-    for (let g = -300; g <= 300; g += 100) {
-      const [gx] = project(g, 0);
-      mapCtx.beginPath();
-      mapCtx.moveTo(gx, 0);
-      mapCtx.lineTo(gx, h);
-      mapCtx.stroke();
-    }
-    for (let z = -800; z <= 100; z += 150) {
-      const [, gy] = project(0, z);
-      mapCtx.beginPath();
-      mapCtx.moveTo(0, gy);
-      mapCtx.lineTo(w, gy);
-      mapCtx.stroke();
-    }
-    const [rx1, ry1] = project(0, 86);
-    const [rx2, ry2] = project(0, -154);
-    mapCtx.strokeStyle = 'rgba(235,246,249,0.8)';
-    mapCtx.lineWidth = 4;
-    mapCtx.beginPath();
-    mapCtx.moveTo(rx1, ry1);
-    mapCtx.lineTo(rx2, ry2);
-    mapCtx.stroke();
-    for (let i = 0; i < data.rings.length; i += 1) {
-      const c = data.rings[i].center;
-      const [px, py] = project(c.x, c.z);
-      const passed = i < data.ringIndex;
-      const next = i === data.ringIndex;
-      mapCtx.beginPath();
-      mapCtx.arc(px, py, next ? 6 : 4, 0, Math.PI * 2);
-      mapCtx.strokeStyle = passed ? 'rgba(130,160,175,0.45)' : next ? '#ffcf70' : 'rgba(109,227,255,0.8)';
-      mapCtx.lineWidth = next ? 2.5 : 1.5;
-      mapCtx.stroke();
-      if (next) {
-        mapCtx.beginPath();
-        mapCtx.arc(px, py, 10, 0, Math.PI * 2);
-        mapCtx.strokeStyle = 'rgba(255,207,112,0.35)';
-        mapCtx.stroke();
-      }
-    }
-    const [ax, ay] = project(data.pos.x, data.pos.z);
-    mapCtx.save();
-    mapCtx.translate(ax, ay);
-    mapCtx.rotate(data.heading);
-    mapCtx.beginPath();
-    mapCtx.moveTo(0, -8);
-    mapCtx.lineTo(5.5, 6);
-    mapCtx.lineTo(0, 3);
-    mapCtx.lineTo(-5.5, 6);
-    mapCtx.closePath();
-    mapCtx.fillStyle = '#ffffff';
-    mapCtx.shadowColor = '#6de3ff';
-    mapCtx.shadowBlur = 8;
-    mapCtx.fill();
-    mapCtx.restore();
-    mapCtx.fillStyle = 'rgba(180,220,235,0.8)';
-    mapCtx.font = 'bold 11px ui-monospace, monospace';
-    mapCtx.fillText('N', w / 2 - 3, 10);
-  }
-
-  function updateHUD(data) {
-    hud.classList.toggle('cockpit-view', data.cameraMode === 'cockpit');
-    document.getElementById('hudMission').textContent = data.mission.name;
-    document.getElementById('hudObjective').textContent = data.ringIndex >= data.rings.length
-      ? 'ALL GATES · LAND ON 09'
-      : `GATE ${data.ringIndex + 1} / ${data.rings.length} · CLEARED ${data.ringIndex}`;
-    document.getElementById('hudTime').textContent = fmtTime(data.timeLeft);
-    document.getElementById('hudTimeBar').style.width = `${Math.max(0, (data.timeLeft / data.timeTotal) * 100)}%`;
-    document.getElementById('hudTimeBar').classList.toggle('low', data.timeLeft < 30);
-    document.getElementById('hudScore').textContent = padScore(data.score);
-    document.getElementById('hudHullBar').style.width = `${Math.max(0, data.integrity)}%`;
-    document.getElementById('hudHullBar').classList.toggle('low', data.integrity < 55);
-    document.getElementById('hudHullBar').classList.toggle('critical', data.integrity < 25);
-    document.getElementById('hudHullText').textContent = `AIRFRAME ${Math.round(data.integrity)}%`;
-    document.getElementById('hudSpeed').textContent = `${String(Math.round(data.speedKts)).padStart(3, '0')} KT`;
-    document.getElementById('hudAlt').textContent = `${String(Math.round(data.altFt)).padStart(4, '0')} FT`;
-    document.getElementById('hudHeading').textContent = `${String(Math.round(data.headingDeg)).padStart(3, '0')}°`;
-    document.getElementById('hudVsi').textContent = `${data.vsiFpm >= 0 ? '+' : '−'}${String(Math.abs(Math.round(data.vsiFpm))).padStart(4, '0')} FPM`;
-    document.getElementById('hudThrottle').textContent = `${Math.round(data.throttle * 100)}%`;
-    document.getElementById('hudThrottleBar').style.width = `${Math.round(data.throttle * 100)}%`;
-    document.getElementById('hudGear').textContent = data.gear ? 'GEAR DOWN' : 'GEAR UP';
-    document.getElementById('hudGear').classList.toggle('on', data.gear);
-    document.getElementById('hudFlaps').textContent = data.flaps ? 'FLAPS DOWN' : 'FLAPS UP';
-    document.getElementById('hudFlaps').classList.toggle('on', data.flaps);
-    document.getElementById('hudCamera').textContent = data.cameraMode === 'cockpit' ? 'COCKPIT VIEW' : 'CHASE VIEW';
-    document.getElementById('hudWind').textContent = `WIND ${data.wind.toFixed(1)}`;
-    document.getElementById('hudWarning').classList.toggle('hidden', !data.stall);
-    document.getElementById('hudMessage').textContent = data.messageTime > 0 ? data.message : '';
-    const target = document.getElementById('hudTarget');
-    if (data.ringIndex < data.rings.length && data.targetDistance < 900) {
-      target.classList.remove('hidden');
-      document.getElementById('hudTargetDist').textContent = `${Math.round(data.targetDistance)} m`;
-    } else {
-      target.classList.add('hidden');
-    }
-    drawMinimap(data);
-  }
-
   return {
     showTitle,
     showBriefing,
@@ -295,7 +191,7 @@ export function createUI(onAction) {
     showPause,
     showHelp,
     showResult,
-    updateHUD,
+    updateHUD: hudView.update,
     get screen() {
       return lastScreen;
     },

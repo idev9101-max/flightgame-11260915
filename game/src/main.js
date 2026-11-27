@@ -5,10 +5,9 @@ import { createAircraft } from './aircraft.js';
 import { createInput } from './input.js';
 import { createUI } from './ui.js';
 import { createSound } from './audio.js';
-import { stageShot } from './shots.js';
+import { stageShot } from './screenshots.js';
+import { buildResultData, missionTelemetry, scoreCompletedMission } from './missionLogic.js';
 import { clamp } from './random.js';
-
-const DEG = 180 / Math.PI;
 const params = new URLSearchParams(window.location.search);
 const shotParam = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
@@ -88,32 +87,7 @@ function launchMission(index) {
 }
 
 function missionData() {
-  const state = aircraft.state;
-  const next = world.rings[state.ringIndex];
-  return {
-    mission,
-    timeLeft: state.timeLeft,
-    timeTotal: mission.time,
-    score: state.score,
-    integrity: state.integrity,
-    ringIndex: state.ringIndex,
-    rings: world.rings,
-    ringCount: world.rings.length,
-    speedKts: state.vel.length() * 1.94384,
-    altFt: Math.max(-20, (state.pos.y - 6) * 3.28084),
-    headingDeg: ((state.heading * DEG) % 360 + 360) % 360,
-    vsiFpm: state.vel.y * 196.85,
-    throttle: state.throttle,
-    gear: state.gear,
-    flaps: state.flaps,
-    cameraMode,
-    stall: state.stalled,
-    message: state.message,
-    messageTime: state.messageTime,
-    wind: mission.wind + Math.sin(state.elapsed * 1.7) * mission.gust,
-    targetDistance: next ? state.pos.distanceTo(next.center) : Infinity,
-    pos: state.pos,
-  };
+  return missionTelemetry(mission, aircraft.state, world, cameraMode, aircraft.state.elapsed);
 }
 
 function showPause() {
@@ -169,25 +143,12 @@ function closeHelp() {
 function finish(success, reason) {
   if (screen !== 'play') return;
   const state = aircraft.state;
-  if (success) {
-    state.score += Math.round((state.timeLeft * 45 * mission.multiplier + state.integrity * 14) / 10) * 10;
-  }
+  const bonus = success ? scoreCompletedMission(state, mission) : null;
   if (state.score > best) {
     best = state.score;
     save(BEST_KEY, best);
   }
-  resultData = {
-    success,
-    reason,
-    score: state.score,
-    best,
-    ringIndex: state.ringIndex,
-    rings: world.rings,
-    ringCount: world.rings.length,
-    elapsed: state.elapsed,
-    integrity: state.integrity,
-    mission,
-  };
+  resultData = buildResultData(success, reason, state, world, mission, best, bonus);
   screen = success ? 'success' : 'fail';
   input.allowPointerLock(false);
   input.unlock();
@@ -206,6 +167,9 @@ function handleEvents(events) {
     } else if (event.type === 'liftoff') {
       sound.click();
       ui.flash('AIRBORNE · FOLLOW THE GATES', 'warn');
+    } else if (event.type === 'flameout') {
+      sound.crash();
+      ui.flash('FUEL EXHAUSTED · ENGINE OUT', 'bad');
     } else if (event.type === 'touchdown') {
       sound.touchdown();
       if (event.complete) finish(true, 'CLEAN LANDING ON RUNWAY 09');
@@ -281,6 +245,7 @@ function handleAction(action, value = 0) {
       let next = missionIndex;
       if (action === 'prev') next = (missionIndex + MISSIONS.length - 1) % MISSIONS.length;
       else if (action === 'next') next = (missionIndex + 1) % MISSIONS.length;
+      else if (action === 'select') next = value;
       else if (action.startsWith('select')) next = Number(action.replace('select', '')) || 0;
       if (next !== missionIndex) {
         missionIndex = clamp(next, 0, MISSIONS.length - 1);
@@ -399,7 +364,7 @@ buildMission(0);
 goTitle();
 
 if (shotName) {
-  const shotMission = shotName === 'chase' ? 1 : 0;
+  const shotMission = shotName === 'chase' ? 1 : shotName === 'cockpit' ? 2 : 0;
   buildMission(shotMission);
   const staged = stageShot(shotName, { aircraft, world, mission, selectedMission: shotMission });
   screen = staged.screen;

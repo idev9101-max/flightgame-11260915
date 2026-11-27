@@ -1,11 +1,16 @@
 import * as THREE from './engine.js';
-import { RUNWAY_FAR, RUNWAY_HALF_WIDTH, RUNWAY_NEAR, RUNWAY_Y, SEED } from './config.js';
+import { RUNWAY_NEAR, RUNWAY_Y, SEED } from './config.js';
 import { clamp, createRandom, fbm, lerp, smoothstep } from './random.js';
 import {
-  makeBroadleafGeometry, makeCloudGeometry, makeConiferGeometry, makeGlowTexture,
-  makeMountainGeometry, makeRingGlowTexture, makeRockGeometry, makeRunwayTexture,
-  makeSurfaceTexture, makeWaterTexture,
+  makeBroadleafGeometry, makeConiferGeometry, makeGlowTexture,
+  makeMountainGeometry, makeRockGeometry,
 } from './worldAssets.js';
+import { createTerrain } from './terrain.js';
+import { createSkyLighting, updateSkyLighting } from './sky.js';
+import { createWater, updateWater } from './water.js';
+import { createClouds, updateClouds } from './clouds.js';
+import { createRunway } from './runway.js';
+import { createGates, updateGates } from './gates.js';
 
 const SKY_PRESETS = {
   dawn: {
@@ -40,35 +45,6 @@ const SKY_PRESETS = {
   },
 };
 
-function makeCanvasTexture(draw, width = 256, height = 128) {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  draw(ctx, width, height);
-  const texture = new THREE.CanvasTexture(canvas);
-  if (THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  return texture;
-}
-
-function makeLabelTexture(text, accent) {
-  return makeCanvasTexture((ctx, w, h) => {
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(5,18,28,0.82)';
-    ctx.beginPath();
-    ctx.roundRect(8, 30, w - 16, h - 56, 18);
-    ctx.fill();
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    ctx.fillStyle = '#e9f8ff';
-    ctx.font = 'bold 62px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, w / 2, h / 2 + 2);
-  });
-}
 
 function terrainColor(height, x, z, mission, random) {
   const color = new THREE.Color();
@@ -112,60 +88,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   const preset = SKY_PRESETS[mission.sky] ?? SKY_PRESETS.day;
   const random = createRandom(seed * 7919);
 
-  scene.fog = new THREE.FogExp2(preset.fog, mission.sky === 'storm' ? 0.00092 : mission.sky === 'dawn' ? 0.00042 : 0.00058);
-  scene.background = new THREE.Color(preset.fog);
-
-  const skyUniforms = {
-    topColor: { value: new THREE.Color(preset.top) },
-    bottomColor: { value: new THREE.Color(preset.bottom) },
-    sunColor: { value: new THREE.Color(preset.sun) },
-    sunDirection: { value: new THREE.Vector3(...preset.sunDir).normalize() },
-  };
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(1500, 24, 16),
-    new THREE.ShaderMaterial({
-      uniforms: skyUniforms,
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
-      vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * uModelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `
-        uniform vec3 topColor; uniform vec3 bottomColor; uniform vec3 sunColor; uniform vec3 sunDirection;
-        varying vec3 vDir;
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        void main(){
-          vec3 dir = normalize(vDir);
-          float h = smoothstep(-0.22, 0.72, dir.y);
-          vec3 col = mix(bottomColor, topColor, h);
-          float horizon = 1.0 - smoothstep(0.0, 0.26, abs(dir.y));
-          col = mix(col, bottomColor * 1.06, horizon * 0.24);
-          float alignment = max(0.0, dot(dir, normalize(sunDirection)));
-          float disc = pow(alignment, 480.0);
-          float halo = pow(alignment, 7.0) * 0.3 + pow(alignment, 34.0) * 0.34;
-          float flare = pow(alignment, 18.0) * (0.62 + 0.38 * sin(atan(dir.y, dir.x) * 9.0)) * 0.13;
-          col += sunColor * (disc * 2.1 + halo + flare);
-          col += (hash(dir.xy * 730.0) - 0.5) * 0.008;
-          gl_FragColor = vec4(col, 1.0);
-        }`,
-    }),
-  );
-  sky.position.set(0, 0, -350);
-  sky.frustumCulled = false;
-  root.add(sky);
-
-  const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: makeGlowTexture(`#${preset.sun.toString(16).padStart(6, '0')}`, 256),
-    transparent: true, opacity: mission.sky === 'storm' ? 0.16 : 0.38, depthWrite: false, fog: false,
-  }));
-  sunGlow.scale.set(150, 150, 1);
-  root.add(sunGlow);
-
-  const hemi = new THREE.HemisphereLight(preset.hemiSky, preset.hemiGround, 1.35);
-  root.add(hemi);
-  const sun = new THREE.DirectionalLight(preset.sun, preset.sunPower);
-  sun.position.set(preset.sunDir[0] * 400, preset.sunDir[1] * 400 + 100, preset.sunDir[2] * 400 - 250);
-  root.add(sun);
-  root.add(new THREE.AmbientLight(0x8fa9b5, 0.35));
+  const skyParts = createSkyLighting(root, scene, preset, mission);
 
   const gatePath = [[0, RUNWAY_NEAR], ...mission.rings.map(([x, , z]) => [x, z]), [0, -920]];
   function guideX(z) {
@@ -218,78 +141,9 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     return h;
   }
 
-  const size = 1500;
-  const segments = 160;
-  const vertexCount = (segments + 1) * (segments + 1);
-  const positions = new Float32Array(vertexCount * 3);
-  const colors = new Float32Array(positions.length);
-  const uvs = new Float32Array(vertexCount * 2);
-  const indices = [];
-  let vi = 0;
-  for (let j = 0; j <= segments; j += 1) {
-    const z = -350 - size / 2 + (j / segments) * size;
-    for (let i = 0; i <= segments; i += 1) {
-      const x = -size / 2 + (i / segments) * size;
-      const h = heightAt(x, z);
-      positions[vi] = x;
-      positions[vi + 1] = h;
-      positions[vi + 2] = z;
-      const c = terrainColor(h, x, z, mission, random);
-      colors[vi] = c.r;
-      colors[vi + 1] = c.g;
-      colors[vi + 2] = c.b;
-      uvs[(vi / 3) * 2] = i / segments;
-      uvs[(vi / 3) * 2 + 1] = j / segments;
-      vi += 3;
-    }
-  }
-  for (let j = 0; j < segments; j += 1) {
-    for (let i = 0; i < segments; i += 1) {
-      const a = j * (segments + 1) + i;
-      const b = a + 1;
-      const c = a + segments + 1;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-  const terrainGeometry = new THREE.BufferGeometry();
-  terrainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  terrainGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  terrainGeometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-  terrainGeometry.setIndex(indices);
-  terrainGeometry.computeVertexNormals();
-  const terrain = new THREE.Mesh(
-    terrainGeometry,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true, map: makeSurfaceTexture(), detail: 0.3, groundShade: 1,
-      flatShading: true, roughness: 0.96, metalness: 0,
-    }),
-  );
-  root.add(terrain);
+  createTerrain(root, mission, heightAt, terrainColor, random);
 
-  const waterSegments = 34;
-  const waterGeometry = new THREE.PlaneGeometry(1600, 1700, waterSegments, waterSegments);
-  waterGeometry.rotateX(-Math.PI / 2);
-  const waterBase = Float32Array.from(waterGeometry.attributes.position.array);
-  const waterColors = new Float32Array(waterGeometry.attributes.position.count * 3);
-  waterGeometry.setAttribute('color', new THREE.BufferAttribute(waterColors, 3));
-  const water = new THREE.Mesh(
-    waterGeometry,
-    new THREE.MeshPhongMaterial({
-      color: mission.sky === 'storm' ? 0x2e596b : mission.id === 'harbor' ? 0x2f7ea3 : 0x2b7e9c,
-      specular: 0xffedcf,
-      shininess: 128,
-      map: makeWaterTexture(),
-      detail: 0.16,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.95,
-      flatShading: true,
-      side: THREE.DoubleSide,
-    }),
-  );
-  water.position.set(0, 0.15, -350);
-  root.add(water);
+  const waterParts = createWater(root, mission);
 
   function ribbon(points, width, offset, material) {
     const verts = [];
@@ -911,198 +765,8 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   if (peaks.instanceColor) peaks.instanceColor.needsUpdate = true;
   root.add(peaks);
 
-  const runwayLength = RUNWAY_NEAR - RUNWAY_FAR;
-  const runwayCenter = (RUNWAY_NEAR + RUNWAY_FAR) / 2;
-  const asphalt = new THREE.Mesh(
-    new THREE.BoxGeometry(RUNWAY_HALF_WIDTH * 2, 0.6, runwayLength),
-    new THREE.MeshStandardMaterial({ color: 0x8d99a2, map: makeRunwayTexture(), detail: 0.14, roughness: 0.94, metalness: 0.02 }),
-  );
-  asphalt.position.set(0, RUNWAY_Y + 0.15, runwayCenter);
-  root.add(asphalt);
-
-  const markingMaterial = new THREE.MeshBasicMaterial({ color: 0xe9f4f4 });
-  const dashGeometry = new THREE.BoxGeometry(1.2, 0.08, 9);
-  for (let z = RUNWAY_FAR + 22; z < RUNWAY_NEAR - 18; z += 21) {
-    const dash = new THREE.Mesh(dashGeometry, markingMaterial);
-    dash.position.set(0, RUNWAY_Y + 0.48, z);
-    root.add(dash);
-  }
-  const stripeGeometry = new THREE.BoxGeometry(0.8, 0.08, runwayLength - 10);
-  for (const side of [-1, 1]) {
-    const stripe = new THREE.Mesh(stripeGeometry, markingMaterial);
-    stripe.position.set(side * (RUNWAY_HALF_WIDTH - 1.8), RUNWAY_Y + 0.48, runwayCenter);
-    root.add(stripe);
-  }
-  for (const end of [RUNWAY_FAR + 10, RUNWAY_NEAR - 10]) {
-    for (let i = -3; i <= 3; i += 1) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.09, 7), markingMaterial);
-      bar.position.set(i * 4.7, RUNWAY_Y + 0.49, end);
-      root.add(bar);
-    }
-  }
-  const numberTexture = makeCanvasTexture((ctx, w, h) => {
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#eaf5f4';
-    ctx.font = 'bold 118px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('09', w / 2, h / 2);
-  }, 256, 256);
-  const numberPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(24, 24),
-    new THREE.MeshBasicMaterial({ map: numberTexture, transparent: true, depthWrite: false }),
-  );
-  numberPlane.rotation.x = -Math.PI / 2;
-  numberPlane.position.set(0, RUNWAY_Y + 0.52, RUNWAY_NEAR - 36);
-  root.add(numberPlane);
-  const farNumber = new THREE.Mesh(
-    new THREE.PlaneGeometry(24, 24),
-    new THREE.MeshBasicMaterial({ map: numberTexture, transparent: true, depthWrite: false }),
-  );
-  farNumber.rotation.x = -Math.PI / 2;
-  farNumber.rotation.z = Math.PI;
-  farNumber.position.set(0, RUNWAY_Y + 0.53, RUNWAY_FAR + 38);
-  root.add(farNumber);
-
-  const rubberMaterial = new THREE.MeshBasicMaterial({ color: 0x161d22, transparent: true, opacity: 0.3, depthWrite: false });
-  for (const side of [-1, 1]) {
-    for (const z of [RUNWAY_NEAR - 58, RUNWAY_FAR + 58]) {
-      const skid = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 34), rubberMaterial);
-      skid.rotation.x = -Math.PI / 2;
-      skid.position.set(side * 3.4, RUNWAY_Y + 0.485, z);
-      root.add(skid);
-    }
-  }
-  const aimingMaterial = new THREE.MeshBasicMaterial({ color: 0xf0f6f3, transparent: true, opacity: 0.86 });
-  for (const z of [RUNWAY_NEAR - 76, RUNWAY_FAR + 76]) {
-    for (const side of [-1, 1]) {
-      const bar = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 15), aimingMaterial);
-      bar.rotation.x = -Math.PI / 2;
-      bar.position.set(side * 6.2, RUNWAY_Y + 0.486, z);
-      root.add(bar);
-    }
-  }
-  for (const z of [RUNWAY_NEAR - 5, RUNWAY_FAR + 5]) {
-    for (let i = -5; i <= 5; i += 1) {
-      const key = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 13), markingMaterial);
-      key.rotation.x = -Math.PI / 2;
-      key.position.set(i * 3.4, RUNWAY_Y + 0.487, z);
-      root.add(key);
-    }
-  }
-
-  const apron = new THREE.Mesh(
-    new THREE.BoxGeometry(64, 0.4, 106),
-    new THREE.MeshStandardMaterial({ color: 0x404b50, roughness: 0.96 }),
-  );
-  apron.position.set(-58, RUNWAY_Y + 0.04, -25);
-  root.add(apron);
-  const taxiway = new THREE.Mesh(
-    new THREE.BoxGeometry(12, 0.4, 154),
-    new THREE.MeshStandardMaterial({ color: 0x353e44, roughness: 0.96 }),
-  );
-  taxiway.position.set(-34, RUNWAY_Y + 0.07, -8);
-  root.add(taxiway);
-  const taxiLine = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 0.08, 148),
-    new THREE.MeshBasicMaterial({ color: 0xe0b765 }),
-  );
-  taxiLine.position.set(-34, RUNWAY_Y + 0.29, -8);
-  root.add(taxiLine);
-
-  const lightGeometry = new THREE.SphereGeometry(0.55, 6, 5);
-  const lightMaterialA = new THREE.MeshBasicMaterial({ color: 0x7ef0ff });
-  const lightMaterialB = new THREE.MeshBasicMaterial({ color: 0xffb15c });
-  const edgeGlowA = new THREE.SpriteMaterial({ map: makeGlowTexture('#7ef0ff'), transparent: true, opacity: 0.46, depthWrite: false, fog: false });
-  const edgeGlowB = new THREE.SpriteMaterial({ map: makeGlowTexture('#ffb15c'), transparent: true, opacity: 0.42, depthWrite: false, fog: false });
-  for (let z = RUNWAY_FAR; z <= RUNWAY_NEAR; z += 18) {
-    for (const side of [-1, 1]) {
-      const light = new THREE.Mesh(lightGeometry, z % 36 === 0 ? lightMaterialA : lightMaterialB);
-      light.position.set(side * (RUNWAY_HALF_WIDTH + 1.6), RUNWAY_Y + 0.6, z);
-      root.add(light);
-      const glow = new THREE.Sprite(z % 36 === 0 ? edgeGlowA : edgeGlowB);
-      glow.position.set(light.position.x, RUNWAY_Y + 0.7, z);
-      glow.scale.set(3.2, 3.2, 1);
-      root.add(glow);
-    }
-  }
-  const approachPositions = [];
-  for (let z = RUNWAY_FAR - 12; z > RUNWAY_FAR - 150; z -= 16) {
-    approachPositions.push([0, z]);
-    for (const side of [-1, 1]) approachPositions.push([side * 13, z]);
-  }
-  const approachLights = new THREE.InstancedMesh(
-    lightGeometry,
-    new THREE.MeshBasicMaterial({ color: 0xffd79a }),
-    approachPositions.length,
-  );
-  for (let i = 0; i < approachPositions.length; i += 1) {
-    const [x, z] = approachPositions[i];
-    dummy.position.set(x, RUNWAY_Y + 0.55, z);
-    dummy.scale.setScalar(0.7);
-    dummy.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
-    dummy.updateMatrix();
-    approachLights.setMatrixAt(i, dummy.matrix);
-  }
-  approachLights.instanceMatrix.needsUpdate = true;
-  root.add(approachLights);
-
-  const windsockPole = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 11, 6), new THREE.MeshStandardMaterial({ color: 0xb9c6c5, roughness: 0.7 }));
-  windsockPole.position.set(35, RUNWAY_Y + 5.5, 54);
-  root.add(windsockPole);
-  const windsock = new THREE.Mesh(new THREE.ConeGeometry(1.2, 5, 7, 1, true), new THREE.MeshStandardMaterial({ color: 0xff8a50, emissive: 0x51200d, emissiveIntensity: 0.5, side: THREE.DoubleSide }));
-  windsock.rotation.z = Math.PI / 2;
-  windsock.position.set(38, RUNWAY_Y + 10.4, 54);
-  root.add(windsock);
-
-  const hangarMaterial = new THREE.MeshStandardMaterial({ color: 0x537080, roughness: 0.8, flatShading: true });
-  for (let i = 0; i < 3; i += 1) {
-    const hangar = new THREE.Mesh(new THREE.BoxGeometry(24, 11, 30), hangarMaterial);
-    hangar.position.set(-58, RUNWAY_Y + 5.5, 20 - i * 34);
-    root.add(hangar);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(18, 7, 4), new THREE.MeshStandardMaterial({ color: 0x2f4b5a, flatShading: true }));
-    roof.rotation.y = Math.PI / 4;
-    roof.position.set(-58, RUNWAY_Y + 17, 20 - i * 34);
-    root.add(roof);
-    for (const side of [-1, 1]) {
-      const door = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 0.4), new THREE.MeshStandardMaterial({ color: 0x243a45, roughness: 0.85 }));
-      door.position.set(-58 + side * 6, RUNWAY_Y + 4.2, 35.3 - i * 34);
-      root.add(door);
-    }
-  }
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 5, 28, 6), hangarMaterial);
-  tower.position.set(54, RUNWAY_Y + 14, 5);
-  root.add(tower);
-  const towerTop = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 4, 6), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0x6b4814, emissiveIntensity: 0.7 }));
-  towerTop.position.set(54, RUNWAY_Y + 30, 5);
-  root.add(towerTop);
-  for (let i = 0; i < 8; i += 1) {
-    const angle = (i / 8) * Math.PI * 2;
-    const window = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 0.3), new THREE.MeshBasicMaterial({ color: 0x9ceaff }));
-    window.position.set(54 + Math.sin(angle) * 6.6, RUNWAY_Y + 30, 5 + Math.cos(angle) * 6.6);
-    window.rotation.y = angle;
-    root.add(window);
-  }
-
-  const storm = mission.sky === 'storm';
-  const cloudMaterials = storm
-    ? [0x6b7a86, 0x87959e, 0xa5b1b8].map((color) => new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 1, flatShading: true, transparent: true, opacity: 0.86 }))
-    : [0xf3ede2, 0xffffff, 0xd7e4e8].map((color) => new THREE.MeshStandardMaterial({ color, vertexColors: true, roughness: 1, flatShading: true, transparent: true, opacity: 0.74 }));
-  const cloudGeometry = makeCloudGeometry();
-  const clouds = [];
-  for (let i = 0; i < 26; i += 1) {
-    const cloud = new THREE.Mesh(cloudGeometry, cloudMaterials[i % cloudMaterials.length]);
-    const baseX = random.range(-620, 620);
-    const baseZ = random.range(-980, 220);
-    const baseY = storm ? random.range(64, 105) : random.range(110, 190);
-    const s = random.range(14, storm ? 28 : 25);
-    cloud.scale.set(s * 1.45, s * 0.68, s);
-    cloud.position.set(baseX, baseY, baseZ);
-    cloud.userData.speed = random.range(1.2, 3.4);
-    cloud.userData.baseY = baseY;
-    clouds.push(cloud);
-    root.add(cloud);
-  }
+  createRunway(root);
+  const clouds = createClouds(root, mission, random);
 
   const hazeMaterial = new THREE.MeshBasicMaterial({
     color: preset.fog, transparent: true, opacity: 0.032,
@@ -1117,73 +781,7 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
     }
   }
 
-  const ringGroups = [];
-  const ringColor = mission.sky === 'storm' ? 0xffbe63 : mission.sky === 'day' ? 0x7be7ff : 0xffd783;
-  const ringDefinitions = mission.rings;
-  for (let i = 0; i < ringDefinitions.length; i += 1) {
-    const [x, y, z] = ringDefinitions[i];
-    const previous = i === 0 ? [0, RUNWAY_Y + 18, RUNWAY_NEAR - 40] : ringDefinitions[i - 1];
-    const normal = new THREE.Vector3(previous[0] - x, previous[1] - y, previous[2] - z).normalize();
-    const group = new THREE.Group();
-    group.position.set(x, y, z);
-    group.lookAt(previous[0], previous[1], previous[2]);
-    const radius = (mission.ringScale ?? 1) * (mission.sky === 'day' ? 15.5 : 16);
-    const torus = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, 1.2, 7, 32),
-      new THREE.MeshStandardMaterial({ color: 0x20323d, emissive: ringColor, emissiveIntensity: 0.55, roughness: 0.5, metalness: 0.25 }),
-    );
-    group.add(torus);
-    const inner = new THREE.Mesh(
-      new THREE.TorusGeometry(radius - 1.9, 0.32, 5, 32),
-      new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.8 }),
-    );
-    group.add(inner);
-    const halo = new THREE.Mesh(
-      new THREE.TorusGeometry(radius + 1.7, 0.5, 5, 32),
-      new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.28, depthWrite: false, fog: false }),
-    );
-    group.add(halo);
-    const ringGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeRingGlowTexture(`#${ringColor.toString(16).padStart(6, '0')}`),
-      transparent: true, opacity: 0.42, depthWrite: false, fog: false,
-    }));
-    ringGlow.scale.set(radius * 1.9, radius * 1.9, 1);
-    group.add(ringGlow);
-    const veil = new THREE.Mesh(
-      new THREE.CircleGeometry(radius - 2.2, 32),
-      new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.055, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    veil.position.z = 0.12;
-    group.add(veil);
-    for (let b = 0; b < 4; b += 1) {
-      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.85, 6, 5), new THREE.MeshBasicMaterial({ color: ringColor }));
-      const angle = (b / 4) * Math.PI * 2;
-      beacon.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-      beacon.userData.angle = angle;
-      group.add(beacon);
-    }
-    const label = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: makeLabelTexture(String(i + 1).padStart(2, '0'), '#6de3ff'), transparent: true, depthWrite: false }),
-    );
-    label.position.set(0, radius + 6.5, 0);
-    label.scale.set(9.5, 4.75, 1);
-    group.add(label);
-    root.add(group);
-    ringGroups.push({
-      group,
-      center: new THREE.Vector3(x, y, z),
-      normal,
-      radius,
-      torus,
-      inner,
-      halo,
-      ringGlow,
-      veil,
-      label,
-      passed: false,
-      home: new THREE.Vector3(x, y, z),
-    });
-  }
+  const ringGroups = createGates(root, mission);
 
   const startPad = new THREE.Mesh(
     new THREE.CircleGeometry(3.5, 12),
@@ -1193,68 +791,16 @@ export function createWorld(scene, mission, missionIndex, seedValue = SEED) {
   startPad.position.set(0, RUNWAY_Y + 0.55, RUNWAY_NEAR - 28);
   root.add(startPad);
 
-  let waterTime = 0;
-
   return {
     root,
     rings: ringGroups,
     heightAt,
     preset,
     update(dt, time, cameraPos) {
-      waterTime += dt;
-      const attribute = waterGeometry.attributes.position;
-      for (let i = 0; i < attribute.count; i += 1) {
-        const x = waterBase[i * 3];
-        const z = waterBase[i * 3 + 2];
-        attribute.array[i * 3 + 1] = Math.sin(x * 0.032 + waterTime * 0.8) * 0.42 + Math.cos(z * 0.026 - waterTime * 0.55) * 0.32;
-      }
-      attribute.needsUpdate = true;
-      const colorAttribute = waterGeometry.attributes.color;
-      for (let i = 0; i < colorAttribute.count; i += 1) {
-        const x = waterBase[i * 3];
-        const z = waterBase[i * 3 + 2];
-        const ripple = Math.sin(x * 0.043 + z * 0.021 + waterTime * 1.3) * 0.5 + 0.5;
-        const glint = Math.pow(Math.max(0, Math.sin(x * 0.09 - z * 0.035 + waterTime * 2.1)), 12);
-        const value = 0.74 + ripple * 0.2 + glint * 0.55;
-        colorAttribute.array[i * 3] = value;
-        colorAttribute.array[i * 3 + 1] = value * (0.96 + glint * 0.08);
-        colorAttribute.array[i * 3 + 2] = value * (1.02 + glint * 0.04);
-      }
-      colorAttribute.needsUpdate = true;
-      if (Math.floor(time * 8) % 2 === 0) waterGeometry.computeVertexNormals();
-      if (storm) {
-        const flash = Math.max(0, Math.sin(time * 0.83 + 1.7)) ** 24;
-        hemi.intensity = 1.35 + flash * 1.7;
-        sun.intensity = preset.sunPower + flash * 0.9;
-      }
-      for (const cloud of clouds) {
-        cloud.position.x += cloud.userData.speed * dt;
-        if (cloud.position.x > 700) cloud.position.x = -700;
-        cloud.position.y = cloud.userData.baseY + Math.sin(time * 0.25 + cloud.position.z) * 2.5;
-      }
-      for (let i = 0; i < ringGroups.length; i += 1) {
-        const ring = ringGroups[i];
-        ring.group.position.y = ring.home.y + Math.sin(time * 1.1 + i) * 0.8;
-        ring.center.copy(ring.group.position);
-        const isNext = ringGroups.findIndex((r) => !r.passed) === i;
-        const pulse = isNext ? 1 + Math.sin(time * 3) * 0.035 : 1;
-        ring.group.scale.setScalar(pulse);
-        ring.torus.material.emissiveIntensity = ring.passed ? 0.12 : isNext ? 1.55 + Math.sin(time * 4) * 0.25 : 0.55;
-        ring.inner.material.opacity = ring.passed ? 0.12 : isNext ? 1 : 0.38;
-        ring.halo.material.opacity = ring.passed ? 0.05 : isNext ? 0.34 + Math.sin(time * 3) * 0.08 : 0.14;
-        ring.ringGlow.material.opacity = ring.passed ? 0.06 : isNext ? 0.38 + Math.sin(time * 3) * 0.07 : 0.16;
-        ring.veil.material.opacity = ring.passed ? 0.012 : isNext ? 0.085 : 0.035;
-        ring.label.material.opacity = ring.passed ? 0.28 : isNext ? 1 : 0.6;
-        for (const child of ring.group.children) {
-          if (child.userData.angle !== undefined) {
-            const a = child.userData.angle + time * (isNext ? 1.8 : 0.5);
-            const r = ring.radius;
-            child.position.set(Math.cos(a) * r, Math.sin(a) * r, 0);
-          }
-        }
-      }
-      sky.position.set(cameraPos.x, cameraPos.y, cameraPos.z - 350);
-      sunGlow.position.copy(cameraPos).addScaledVector(skyUniforms.sunDirection.value, 820);
+      updateWater(waterParts, dt);
+      updateClouds(clouds, dt, time);
+      updateGates(ringGroups, time);
+      updateSkyLighting(skyParts, mission, time, cameraPos);
     },
     setPassed(index, value) {
       const ring = ringGroups[index];

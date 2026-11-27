@@ -73,15 +73,50 @@ export function makeGlowTexture(color = '#ffffff', size = 128) {
   });
 }
 
+/** Soft irregular puff used in overlapping layers; no hard polygon silhouette. */
+export function makeCloudTexture(color = '#ffffff', size = 256) {
+  return canvasTexture(size, size, (ctx, w, h) => {
+    const lobes = [
+      [0.5, 0.54, 0.34, 0.3],
+      [0.31, 0.58, 0.25, 0.22],
+      [0.69, 0.59, 0.26, 0.23],
+      [0.43, 0.43, 0.24, 0.25],
+      [0.59, 0.42, 0.22, 0.22],
+    ];
+    for (const [cx, cy, rx, ry] of lobes) {
+      ctx.save();
+      ctx.translate(cx * w, cy * h);
+      ctx.scale(rx * w, ry * h);
+      const grad = ctx.createRadialGradient(0, 0, 0.08, 0, 0, 1);
+      grad.addColorStop(0, rgba(color, 0.62));
+      grad.addColorStop(0.48, rgba(color, 0.42));
+      grad.addColorStop(0.8, rgba(color, 0.12));
+      grad.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    const shade = ctx.createLinearGradient(0, h * 0.34, 0, h);
+    shade.addColorStop(0, 'rgba(0,0,0,0)');
+    shade.addColorStop(1, 'rgba(5,12,18,0.18)');
+    ctx.fillStyle = shade;
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+  });
+}
+
 export function makeRingGlowTexture(color, size = 256) {
   return canvasTexture(size, size, (ctx, w, h) => {
     const glow = ctx.createRadialGradient(w / 2, h / 2, w * 0.12, w / 2, h / 2, w / 2);
     glow.addColorStop(0, rgba(color, 0));
     glow.addColorStop(0.36, rgba(color, 0));
-    glow.addColorStop(0.46, rgba(color, 0.1));
-    glow.addColorStop(0.54, rgba(color, 0.72));
-    glow.addColorStop(0.62, rgba(color, 0.2));
-    glow.addColorStop(0.74, rgba(color, 0.035));
+    glow.addColorStop(0.46, rgba(color, 0.04));
+    glow.addColorStop(0.54, rgba(color, 0.35));
+    glow.addColorStop(0.62, rgba(color, 0.09));
+    glow.addColorStop(0.74, rgba(color, 0.015));
     glow.addColorStop(1, rgba(color, 0));
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);

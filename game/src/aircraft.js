@@ -1,6 +1,8 @@
 import * as THREE from './engine.js';
-import { RUNWAY_FAR, RUNWAY_HALF_WIDTH, RUNWAY_NEAR, RUNWAY_Y } from './config.js';
-import { clamp, damp, smoothstep } from './random.js';
+import { RUNWAY_Y } from './config.js';
+import { clamp } from './random.js';
+import { createFlightModel } from './flightPhysics.js';
+import { fuelPressure, fuelState } from './fuelSystem.js';
 import { makeGlowTexture, makePropTexture } from './worldAssets.js';
 
 const DEG = 180 / Math.PI;
@@ -309,7 +311,6 @@ function createPanel(mission) {
     const stall = Boolean(data.stall);
     const gear = Boolean(data.gear);
     const flaps = Boolean(data.flaps);
-    const rollDeg = Math.abs(rollRad * 180 / Math.PI);
     base();
 
     box(24, 18, 332, 62, 10, '#071720', 'rgba(109, 208, 232, 0.4)');
@@ -331,11 +332,22 @@ function createPanel(mission) {
     headingTape(24, 300, 640, 72, heading);
 
     box(694, 300, 306, 72, 10, '#0b1b23', 'rgba(142, 194, 212, 0.3)');
+    const fuel = data.fuel ?? { liters: 0, capacity: 1, fraction: 0, reserveWarning: false, engineOut: false };
     warnLight(706, 312, 92, 22, 'STALL', stall && Math.floor(elapsed * 4) % 2 === 0, '#ff6e62');
     warnLight(806, 312, 92, 22, 'GEAR', !gear && alt < 600, '#ffc264');
-    warnLight(906, 312, 82, 22, 'BANK', rollDeg > 24, '#ffc264');
+    warnLight(906, 312, 82, 22, 'FUEL', fuel.reserveWarning || fuel.engineOut, '#ff6e62');
     warnLight(706, 344, 92, 22, 'SINK', vsi < -800, '#ff9978');
     warnLight(806, 344, 192, 22, gear ? 'GEAR DOWN' : 'GEAR UP', true, '#59dba0');
+
+    box(24, 374, 976, 14, 5, '#07141b', 'rgba(142, 194, 212, 0.32)');
+    label('FUEL', 42, 381, 12, '#9fbfcb', 'left');
+    ctx.fillStyle = '#050e14';
+    ctx.fillRect(96, 378, 780, 6);
+    ctx.fillStyle = fuel.engineOut ? '#ff6e62' : fuel.reserveWarning ? '#ffc264' : '#7ae8c0';
+    ctx.fillRect(97, 379, 778 * clamp(fuel.fraction, 0, 1), 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillRect(97 + 778 * clamp(fuel.reserveFraction ?? 0.16, 0, 1), 377, 2, 8);
+    label(`${Math.round(fuel.liters)} / ${Math.round(fuel.capacity)} L`, 978, 381, 13, fuel.reserveWarning ? '#ffc264' : '#c8e9f0', 'right');
 
     box(24, 390, 430, 92, 12, '#0a1920', 'rgba(142, 194, 212, 0.32)');
     label('THROTTLE', 46, 412, 16, '#9fbfcb', 'left');
@@ -694,7 +706,7 @@ function buildCockpit(mission) {
   const edge = new THREE.MeshBasicMaterial({ color: 0x7d9aa4, fog: false });
 
   const backing = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.62, 0.16), shell);
-  backing.position.set(0, -0.7, -1.52);
+  backing.position.set(0, -0.84, -1.55);
   backing.rotation.x = -0.16;
   group.add(backing);
 
@@ -704,7 +716,7 @@ function buildCockpit(mission) {
     new THREE.PlaneGeometry(1.1, 0.55),
     instrumentMaterial,
   );
-  instruments.position.set(0, -0.68, -1.42);
+  instruments.position.set(0, -0.82, -1.45);
   instruments.rotation.x = -0.16;
   group.add(instruments);
 
@@ -712,16 +724,16 @@ function buildCockpit(mission) {
     new THREE.PlaneGeometry(1.08, 0.54),
     new THREE.MeshBasicMaterial({ color: 0xbaeaff, transparent: true, opacity: 0.05, fog: false, depthWrite: false, side: THREE.DoubleSide }),
   );
-  glass.position.set(0, -0.675, -1.405);
+  glass.position.set(0, -0.825, -1.435);
   glass.rotation.x = -0.16;
   group.add(glass);
 
   const hood = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.19), shell);
-  hood.position.set(0, -0.37, -1.34);
+  hood.position.set(0, -0.52, -1.37);
   hood.rotation.x = -0.16;
   group.add(hood);
   const hoodLip = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.018, 0.028), edge);
-  hoodLip.position.set(0, -0.31, -1.23);
+  hoodLip.position.set(0, -0.46, -1.26);
   group.add(hoodLip);
 
   const indicatorColors = [0x6de3ff, 0xffcf70, 0x8ce6a8, 0xff7d6b];
@@ -730,18 +742,18 @@ function buildCockpit(mission) {
       map: makeGlowTexture(`#${indicatorColors[i].toString(16).padStart(6, '0')}`),
       transparent: true, opacity: 0.46, depthWrite: false, fog: false,
     }));
-    lamp.position.set(-0.36 + i * 0.24, -0.305, -1.21);
+    lamp.position.set(-0.36 + i * 0.24, -0.455, -1.24);
     lamp.scale.set(0.12, 0.12, 1);
     group.add(lamp);
   }
 
   for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.15, 0.07), shell);
-    pillar.position.set(side * 0.82, 0.04, -1.4);
-    pillar.rotation.z = side * 0.16;
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.94, 0.06), shell);
+    pillar.position.set(side * 0.9, -0.08, -1.42);
+    pillar.rotation.z = side * 0.11;
     group.add(pillar);
     const sill = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 1.3), shell);
-    sill.position.set(side * 0.94, -0.28, -0.6);
+    sill.position.set(side * 0.97, -0.42, -0.6);
     group.add(sill);
     const windowGlint = new THREE.Mesh(
       new THREE.PlaneGeometry(0.018, 0.42),
@@ -762,33 +774,33 @@ function buildCockpit(mission) {
   const noseAccent = new THREE.MeshStandardMaterial({ color: 0xe4693f, roughness: 0.42, metalness: 0.25, shininess: 58, flatShading: true, fog: false });
   const cowling = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.42, 1.75, 10), nosePaint);
   cowling.rotation.x = Math.PI / 2;
-  cowling.position.set(0, -1.02, -2.8);
+  cowling.position.set(0, -1.22, -2.8);
   group.add(cowling);
   const cowlBand = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.24, 10), noseAccent);
   cowlBand.rotation.x = Math.PI / 2;
-  cowlBand.position.set(0, -1.02, -3.48);
+  cowlBand.position.set(0, -1.22, -3.48);
   group.add(cowlBand);
   const cowlSeam = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.022, 5, 12), trim);
-  cowlSeam.position.set(0, -1.02, -3.31);
+  cowlSeam.position.set(0, -1.22, -3.31);
   group.add(cowlSeam);
   for (const side of [-1, 1]) {
     const support = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 1.4), trim);
-    support.position.set(side * 0.42, -0.7, -2.05);
+    support.position.set(side * 0.42, -0.9, -2.05);
     support.rotation.x = 0.08;
     group.add(support);
     const noseStripe = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.03, 1.6), noseAccent);
-    noseStripe.position.set(side * 0.25, -0.83, -2.9);
+    noseStripe.position.set(side * 0.25, -1.03, -2.9);
     group.add(noseStripe);
   }
   const spinnerCone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.62, 10), trim);
   spinnerCone.rotation.x = -Math.PI / 2;
-  spinnerCone.position.set(0, -1.02, -3.82);
+  spinnerCone.position.set(0, -1.22, -3.82);
   group.add(spinnerCone);
   const propBlur = new THREE.Mesh(
     new THREE.PlaneGeometry(1.9, 1.9),
     new THREE.MeshBasicMaterial({ map: makePropTexture(), transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   );
-  propBlur.position.set(0, -1.02, -4.02);
+  propBlur.position.set(0, -1.22, -4.02);
   group.add(propBlur);
 
   const yoke = new THREE.Group();
@@ -797,7 +809,7 @@ function buildCockpit(mission) {
   stem.position.y = -0.11;
   const hub = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.08), shell);
   yoke.add(grip, stem, hub);
-  yoke.position.set(0, -0.26, -0.56);
+  yoke.position.set(0, -0.4, -0.56);
   yoke.rotation.x = -0.3;
   group.add(yoke);
 
@@ -864,52 +876,19 @@ export function createAircraft(scene, camera, mission) {
   const sparkVelocities = [];
   let sparkLife = 0;
 
-  const state = {
-    pos: new THREE.Vector3(0, RUNWAY_Y + 1.45, RUNWAY_NEAR - 28),
-    vel: new THREE.Vector3(0, 0, 0),
-    heading: 0,
-    pitch: 0,
-    roll: 0,
-    throttle: 0.55,
-    throttleTarget: 0.55,
-    gear: true,
-    flaps: false,
-    flying: false,
-    stalled: false,
-    integrity: 100,
-    score: 0,
-    ringIndex: 0,
-    elapsed: 0,
-    timeLeft: mission.time,
-    message: 'THROTTLE UP · ROTATE AT 80 KT',
-    messageTime: 4,
-    crashed: false,
-    landed: false,
-  };
-
-  const quaternion = new THREE.Quaternion();
-  const forward = new THREE.Vector3(0, 0, -1);
-  const up = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3(1, 0, 0);
-  const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const flight = createFlightModel(mission);
+  const state = flight.state;
+  const { quaternion, forward, up, right } = flight.axes;
   const tmpA = new THREE.Vector3();
-  const tmpB = new THREE.Vector3();
-  const tmpC = new THREE.Vector3();
-  const prevPos = new THREE.Vector3();
   const chaseOffset = new THREE.Vector3(0, 3.2, 16.5);
   const cockpitOffset = new THREE.Vector3(0, 1.15, -2.4);
   const desiredCamera = new THREE.Vector3();
   const lookTarget = new THREE.Vector3();
   let propAngle = 0;
-  let shake = 0;
   let activeWorld = null;
 
   function updateAxes() {
-    euler.set(state.pitch, -state.heading, state.roll);
-    quaternion.setFromEuler(euler);
-    forward.set(0, 0, -1).applyQuaternion(quaternion);
-    up.set(0, 1, 0).applyQuaternion(quaternion);
-    right.set(1, 0, 0).applyQuaternion(quaternion);
+    flight.updateAxes();
   }
 
   function updateTrails(dt) {
@@ -997,139 +976,12 @@ export function createAircraft(scene, camera, mission) {
     sparks.material.opacity = clamp(sparkLife / 1.6, 0, 1);
   }
 
-  function setMessage(text, duration = 2.4) {
-    state.message = text;
-    state.messageTime = duration;
-  }
-
   function update(dt, controls, world, events) {
     activeWorld = world;
-    if (state.crashed) {
-      updateSparks(dt);
-      updateAxes();
-      return;
-    }
-    state.elapsed += dt;
-    state.timeLeft = Math.max(0, state.timeLeft - dt);
-    state.messageTime = Math.max(0, state.messageTime - dt);
-
-    state.throttle = damp(state.throttle, state.throttleTarget, 2.4, dt);
-    const pitchTarget = clamp(controls.pitch, -1, 1) * 0.38;
-    const rollTarget = clamp(controls.roll, -1, 1) * 0.66;
-    state.pitch = damp(state.pitch, state.flying ? pitchTarget : pitchTarget * 0.28, state.flying ? 3.1 : 5, dt);
-    state.roll = damp(state.roll, state.flying ? rollTarget : 0, 3.6, dt);
-    const yawRate = controls.yaw * 0.42 + Math.sin(state.roll) * 0.28;
-    state.heading += yawRate * dt;
-    if (!state.flying) {
-      state.heading = damp(state.heading, 0, 1.8, dt);
-      state.pitch = damp(state.pitch, 0, 4, dt);
-    }
-    updateAxes();
-
-    prevPos.copy(state.pos);
-    const speed = state.vel.length();
-    const thrust = state.throttle * 32;
-    const drag = 0.55 + 0.0038 * speed * speed + (state.gear ? 1.8 : 0) + (state.flaps ? 1.6 : 0) + (controls.brake ? 11 : 0);
-    state.vel.addScaledVector(forward, thrust * dt);
-    tmpB.copy(state.vel).normalize();
-    state.vel.addScaledVector(tmpB, -drag * dt);
-
-    const stallFactor = smoothstep(17, 34, speed) * (1 - 0.45 * smoothstep(0.2, 0.48, state.pitch));
-    state.stalled = stallFactor < 0.72 && state.flying;
-    const lift = 0.003 * speed * speed * (1 + (state.flaps ? 0.34 : 0)) * stallFactor * Math.cos(state.roll * 0.55);
-    state.vel.addScaledVector(up, lift * dt);
-    state.vel.y -= 9.81 * dt;
-    const wind = mission.wind * Math.sin(state.elapsed * 0.37) + mission.gust * Math.sin(state.elapsed * 1.9 + 1.2);
-    state.vel.x += wind * dt;
-
-    const forwardSpeed = state.vel.dot(forward);
-    tmpC.copy(state.vel).addScaledVector(forward, -forwardSpeed);
-    tmpC.multiplyScalar(Math.exp(-3.4 * dt));
-    state.vel.copy(forward).multiplyScalar(forwardSpeed).add(tmpC);
-    state.vel.clampLength(0, 145);
-    state.pos.addScaledVector(state.vel, dt);
-
-    const ground = world.heightAt(state.pos.x, state.pos.z) + 1.45;
-    if (state.pos.y <= ground) {
-      if (!state.flying) {
-        state.pos.y = ground;
-        state.vel.y = 0;
-        const speedNow = state.vel.length();
-        if (speedNow > 42 && controls.pitch > 0.42) {
-          state.flying = true;
-          setMessage('AIRBORNE · CLIMB TO THE FIRST GATE', 3.2);
-          events.push({ type: 'liftoff' });
-        }
-      } else {
-        const bank = Math.abs(state.roll) * DEG;
-        const pitchDeg = Math.abs(state.pitch) * DEG;
-        const speedNow = state.vel.length();
-        const onRunway = Math.abs(state.pos.x) < RUNWAY_HALF_WIDTH - 1 && state.pos.z < RUNWAY_NEAR && state.pos.z > RUNWAY_FAR;
-        const aligned = Math.abs(Math.sin(state.heading)) < 0.42;
-        const safe = state.gear && onRunway && aligned && speedNow < 76 && bank < 20 && pitchDeg < 17 && state.vel.y > -6.5;
-        if (safe) {
-          state.flying = false;
-          state.pos.y = ground;
-          state.vel.y = 0;
-          state.vel.multiplyScalar(0.72);
-          state.throttleTarget = 0.1;
-          state.landed = true;
-          setMessage('TOUCHDOWN · WELCOME HOME', 3.5);
-          events.push({ type: 'touchdown', complete: state.ringIndex >= world.rings.length });
-        } else if (speedNow < 34 && state.gear && state.vel.y > -5 && !state.stalled) {
-          state.integrity = Math.max(0, state.integrity - 22);
-          state.flying = false;
-          state.pos.y = ground;
-          state.vel.y = 0;
-          state.vel.multiplyScalar(0.35);
-          setMessage('HARD LANDING · AIRFRAME DAMAGED', 3.4);
-          events.push({ type: 'damage' });
-        } else {
-          state.integrity = 0;
-          state.crashed = true;
-          burst();
-          events.push({ type: 'crash' });
-        }
-      }
-    }
-    if (state.pos.y < 0.6 && state.flying) {
-      state.integrity = 0;
-      state.crashed = true;
-      burst();
-      events.push({ type: 'crash' });
-    }
-
-    if (!state.crashed && state.ringIndex < world.rings.length) {
-      const ring = world.rings[state.ringIndex];
-      const d0 = tmpA.copy(prevPos).sub(ring.center).dot(ring.normal);
-      const d1 = tmpB.copy(state.pos).sub(ring.center).dot(ring.normal);
-      if (d0 > 0 && d1 <= 0) {
-        const t = d0 / Math.max(0.0001, d0 - d1);
-        tmpC.copy(prevPos).lerp(state.pos, t).sub(ring.center);
-        if (tmpC.length() < ring.radius * 1.12) {
-          const points = Math.round((900 + Math.max(0, 10 - state.timeLeft * 0.02) * 40) * mission.multiplier);
-          state.score += points;
-          state.ringIndex += 1;
-          world.setPassed(state.ringIndex - 1, true);
-          setMessage(state.ringIndex >= world.rings.length ? 'ALL GATES CLEAR · RETURN AND LAND' : `GATE ${state.ringIndex} CLEAR · +${points}`, 2.8);
-          events.push({ type: 'ring', index: state.ringIndex - 1, points });
-        }
-      }
-    }
-
-    if (state.timeLeft <= 0 && !state.crashed) {
-      state.crashed = true;
-      events.push({ type: 'timeout' });
-    }
-    if (state.integrity <= 0 && !state.crashed) {
-      state.crashed = true;
-      burst();
-      events.push({ type: 'crash' });
-    }
-
-    if (state.stalled && Math.random() < dt * 1.4) shake = Math.max(shake, 0.25);
-    shake = Math.max(0, shake - dt * 0.9);
-    propAngle += dt * (3 + state.throttle * 34);
+    flight.update(dt, controls, world, events);
+    const shakeAmount = flight.shake * 0.16;
+    const power = fuelPressure(state.fuel) * state.throttle;
+    propAngle += dt * (state.fuel.engineOut ? 0.4 : 2 + power * 34);
     body.propeller.rotation.z = propAngle;
     body.propDisc.rotation.z = 0.4 + propAngle * 0.34;
     body.gearGroup.visible = state.gear;
@@ -1139,12 +991,12 @@ export function createAircraft(scene, camera, mission) {
     const rollInput = clamp(controls?.roll ?? 0, -1, 1);
     body.ailerons[0].rotation.x = rollInput * 0.24;
     body.ailerons[1].rotation.x = -rollInput * 0.24;
-    body.propDisc.material.opacity = 0.07 + state.throttle * 0.11 + clamp(state.vel.length() * 0.0006, 0, 0.07);
+    body.propDisc.material.opacity = state.fuel.engineOut ? 0.04 : 0.07 + power * 0.11 + clamp(state.vel.length() * 0.0006, 0, 0.07);
     const strobe = Math.sin(state.elapsed * 6.5) > 0.82 ? 1 : 0;
     body.halos[0].material.opacity = 0.18 + strobe * 0.48;
     body.halos[1].material.opacity = 0.18 + strobe * 0.48;
-    body.exhaust.scale.setScalar(0.5 + state.throttle * 0.95 + Math.sin(state.elapsed * 22) * 0.07);
-    body.exhaust.material.opacity = 0.2 + state.throttle * 0.45;
+    body.exhaust.scale.setScalar(0.5 + power * 0.95 + Math.sin(state.elapsed * 22) * 0.07);
+    body.exhaust.material.opacity = 0.2 + power * 0.45;
     body.group.position.copy(state.pos);
     body.group.quaternion.copy(quaternion);
     updateShadow(world);
@@ -1156,7 +1008,7 @@ export function createAircraft(scene, camera, mission) {
     const cockpitMode = mode === 'cockpit';
     cockpit.group.visible = cockpitMode;
     body.group.visible = !cockpitMode;
-    const shakeAmount = shake * 0.16;
+    const shakeAmount = flight.shake * 0.16;
     if (cockpitMode) {
       tmpA.copy(cockpitOffset).applyQuaternion(quaternion).add(state.pos);
       camera.position.copy(tmpA);
@@ -1211,11 +1063,13 @@ export function createAircraft(scene, camera, mission) {
       score: state.score,
       elapsed: state.elapsed,
       wind: mission.wind + Math.sin(state.elapsed * 1.7) * mission.gust,
+      fuel: fuelState(state.fuel),
     }, force || dt === 0);
     cockpit.yoke.rotation.z = -state.roll * 0.5;
     cockpit.throttle.rotation.z = 0.55 - state.throttle * 1.1;
-    cockpit.propBlur.rotation.z = state.elapsed * (2.5 + state.throttle * 22);
-    cockpit.propBlur.material.opacity = 0.24 + state.throttle * 0.28;
+    const power = fuelPressure(state.fuel) * state.throttle;
+    cockpit.propBlur.rotation.z = state.elapsed * (2.5 + power * 22);
+    cockpit.propBlur.material.opacity = state.fuel.engineOut ? 0.06 : 0.24 + power * 0.28;
   }
 
   return {
@@ -1239,31 +1093,10 @@ export function createAircraft(scene, camera, mission) {
       updateCamera(0, mode, true);
     },
     reset() {
-      state.pos.set(0, RUNWAY_Y + 1.45, RUNWAY_NEAR - 28);
-      state.vel.set(0, 0, 0);
-      state.heading = 0;
-      state.pitch = 0;
-      state.roll = 0;
-      state.throttle = 0.55;
-      state.throttleTarget = 0.55;
-      state.gear = true;
-      state.flaps = false;
-      state.flying = false;
-      state.stalled = false;
-      state.integrity = 100;
-      state.score = 0;
-      state.ringIndex = 0;
-      state.elapsed = 0;
-      state.timeLeft = mission.time;
-      state.message = 'THROTTLE UP · ROTATE AT 80 KT';
-      state.messageTime = 4;
-      state.crashed = false;
-      state.landed = false;
-      shake = 0;
+      flight.reset();
       sparks.visible = false;
       shadow.visible = false;
       resetTrails();
-      updateAxes();
       body.group.position.copy(state.pos);
       body.group.quaternion.copy(quaternion);
     },
@@ -1271,15 +1104,13 @@ export function createAircraft(scene, camera, mission) {
       updateCamera(dt, mode, true);
     },
     adjustThrottle(delta) {
-      state.throttleTarget = clamp(state.throttleTarget + delta, 0, 1);
+      flight.adjustThrottle(delta);
     },
     toggleGear() {
-      state.gear = !state.gear;
-      return state.gear;
+      return flight.toggleGear();
     },
     toggleFlaps() {
-      state.flaps = !state.flaps;
-      return state.flaps;
+      return flight.toggleFlaps();
     },
     burst,
     dispose() {

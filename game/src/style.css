@@ -105,6 +105,10 @@ html, body {
 .timer-fill.low { background: var(--coral); }
 .hull-fill.low { background: var(--amber); }
 .hull-fill.critical { background: var(--coral); }
+.fuel-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ffd36e, #7ae8c0); transition: width 0.25s; }
+.fuel-fill.low { background: var(--amber); }
+.fuel-fill.critical { background: var(--coral); }
+.sub.strong-readout { font-size: 13px; font-weight: 800; color: #f3fbff; letter-spacing: 0.08em; }
 
 .hud-center {
   position: absolute;
@@ -145,6 +149,11 @@ html, body {
 }
 .reticle-line.left { left: 0; transform: scaleX(-1); }
 .reticle-line.right { right: 0; }
+
+.warning.warn {
+  background: rgba(255, 190, 86, 0.92);
+  color: #231503;
+}
 
 .warning {
   margin-top: 10px;

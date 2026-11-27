@@ -1,6 +1,7 @@
 import { RUNWAY_Y } from './config.js';
+import { refillFuel } from './fuelSystem.js';
 
-function setFlight(state, options) {
+function setFlight(state, missionForShot, options) {
   state.pos.set(options.x, options.y, options.z);
   state.heading = options.heading ?? 0;
   state.pitch = options.pitch ?? 0;
@@ -20,6 +21,10 @@ function setFlight(state, options) {
   state.stalled = false;
   state.crashed = false;
   state.integrity = options.integrity ?? 100;
+  refillFuel(state.fuel, missionForShot);
+  state.fuel.liters = options.fuel ?? state.fuel.capacity;
+  state.fuel.engineOut = false;
+  state.fuel.reserveAnnounced = state.fuel.liters <= state.fuel.reserve;
 }
 
 export function stageShot(name, context) {
@@ -29,17 +34,19 @@ export function stageShot(name, context) {
   world.resetRings();
 
   if (name === 'takeoff') {
-    setFlight(state, {
+    setFlight(state, mission, {
       x: 0,
-      y: RUNWAY_Y + 9.5,
-      z: -34,
-      speed: 61,
-      climb: 3.4,
-      pitch: 0.15,
+      y: RUNWAY_Y + 6.5,
+      z: -22,
+      speed: 57,
+      climb: 2.4,
+      pitch: 0.13,
       roll: 0.02,
-      throttle: 0.82,
+      throttle: 0.86,
       gear: true,
       flying: true,
+      fuel: 109,
+      integrity: 100,
       timeLeft: mission.time - 9,
       score: 0,
       message: 'AIRBORNE · CLIMB TO THE FIRST GATE',
@@ -49,17 +56,19 @@ export function stageShot(name, context) {
   }
 
   if (name === 'chase') {
-    setFlight(state, {
-      x: 20,
-      y: 75,
-      z: -370,
-      heading: 0.05,
-      pitch: 0.07,
-      roll: -0.30,
-      speed: 72,
-      climb: 2.2,
-      throttle: 0.88,
+    setFlight(state, mission, {
+      x: 34,
+      y: 66,
+      z: -362,
+      heading: 0.5,
+      pitch: 0.045,
+      roll: -0.24,
+      speed: 70,
+      climb: 1.6,
+      throttle: 0.8,
       ringIndex: 2,
+      fuel: 84,
+      integrity: 87,
       score: 2450,
       timeLeft: mission.time - 31,
       message: 'GATE 2 CLEAR · +1500',
@@ -71,42 +80,48 @@ export function stageShot(name, context) {
   }
 
   if (name === 'harbor') {
-    setFlight(state, {
-      x: 250,
-      y: 40,
-      z: -95,
-      heading: -0.72,
-      pitch: -0.01,
-      roll: 0.16,
-      speed: 66,
-      climb: 1.4,
-      throttle: 0.81,
-      ringIndex: 4,
-      score: 3800,
+    setFlight(state, mission, {
+      x: 8,
+      y: 25,
+      z: -252,
+      heading: Math.PI - 0.03,
+      pitch: -0.035,
+      roll: 0.05,
+      speed: 54,
+      climb: -2.1,
+      throttle: 0.62,
+      gear: true,
+      flaps: true,
+      ringIndex: 5,
+      fuel: 34,
+      integrity: 91,
+      score: 5200,
       timeLeft: mission.time - 24,
-      message: 'HARBOR CIRCUIT · FINAL GATE AHEAD',
-      messageTime: 3,
+      message: 'ALL GATES CLEAR · FINAL APPROACH 09',
+      messageTime: 4,
     });
-    for (let i = 0; i < 4; i += 1) world.setPassed(i, true);
+    for (let i = 0; i < 5; i += 1) world.setPassed(i, true);
     return { screen: 'play', camera: 'chase', time: 14.5, missionIndex: selectedMission };
   }
 
   if (name === 'cockpit') {
-    setFlight(state, {
-      x: -3,
-      y: 32,
-      z: -146,
-      heading: 0.03,
-      pitch: 0.055,
-      roll: 0.04,
-      speed: 63,
-      climb: 1.4,
+    setFlight(state, mission, {
+      x: -55,
+      y: 53,
+      z: -158,
+      heading: 0.01,
+      pitch: 0.025,
+      roll: 0.03,
+      speed: 61,
+      climb: 1.2,
       throttle: 0.74,
       ringIndex: 0,
+      fuel: 118,
+      integrity: 93,
       score: 900,
       timeLeft: mission.time - 17,
-      message: 'GATE 1 AHEAD · 120 m',
-      messageTime: 3,
+      message: 'STORM PATROL · GATE 1 AHEAD',
+      messageTime: 4,
     });
     return { screen: 'play', camera: 'cockpit', time: 11.4, missionIndex: selectedMission };
   }
